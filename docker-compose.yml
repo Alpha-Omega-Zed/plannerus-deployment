@@ -9,7 +9,7 @@ volumes:
 x-op-restart-policy: &restart_policy
   restart: unless-stopped
 x-op-image: &image
-  image: openprojectprod:${TAG:-latest}
+  image: opepprojectprod:${TAG:-latest}
 x-op-app: &app
   <<: [*image, *restart_policy]
   environment:
