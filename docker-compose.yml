@@ -51,10 +51,17 @@ services:
       context: ./proxy
       args:
         APP_HOST: web
-    image: openproject/proxy
+    # image: openproject/proxy # This will be built locally now
     <<: *restart_policy
     ports:
-      - "${PORT:-8080}:80"
+      - "${PORT:-80}:80" # For HTTP (Caddy will redirect to HTTPS)
+      - "${HTTPS_PORT:-443}:443" # For HTTPS
+    volumes:
+      # Mount your SSL certificates from the host into the Caddy container (read-only)
+      - ./ssl/livecerts/fullchain.pem:/etc/ssl/caddy/fullchain.pem:ro
+      - ./ssl/livecerts/privkey.pem:/etc/ssl/caddy/privkey.pem:ro
+      # Optional: Caddy data volume for its own state (e.g., if it were managing certs itself)
+      # - caddy_data:/data
     depends_on:
       - web
     networks:

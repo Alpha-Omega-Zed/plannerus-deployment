@@ -1,17 +1,44 @@
-:80 {
-    reverse_proxy * http://${APP_HOST}:8080 {
-        # The following directives are needed to make the proxy forward explicitly the X-Forwarded-* headers. If unset,
-        # Caddy will reset them. See: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults
-        # This is needed, if you are using a reverse proxy in front of the compose stack and Caddy is NOT your first
-        # point of contact.
-        # When using Caddy is reachable as a first point of contact, it is highly recommended to configure the server's
-        # global `trusted_proxies` directive. See: https://caddyserver.com/docs/caddyfile/options#trusted-proxies
+# ./proxy/Caddyfile.template
+{
+    # Global options if needed, e.g., for trusting downstream proxies like an NLB or Cloudflare
+    # http_port 80
+    # https_port 443
+    # trusted_proxies static <IP_RANGE_OF_YOUR_NLB_IF_ANY>
+}
 
-        header_up X-Forwarded-Proto {header.X-Forwarded-Proto}
-        header_up X-Forwarded-For {header.X-Forwarded-For}
+plannerus.com {
+    # Configure Caddy to use your provided SSL certificates
+    # These paths are *inside* the Caddy container (we mount them in docker-compose)
+    tls /etc/ssl/caddy/fullchain.pem /etc/ssl/caddy/privkey.pem
+
+    # Standard logging to stdout
+    log {
+        output stdout
+        format console
     }
 
-    file_server
+    # Security and other useful headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Optionally remove the Server header
+        # -Server
+    }
 
-    log
+    # Reverse proxy all requests to the OpenProject web service
+    # ${APP_HOST} will be replaced with 'web' by the Dockerfile build process
+    reverse_proxy http://${APP_HOST}:8080 {
+        # Caddy v2 automatically sets appropriate X-Forwarded-For, X-Forwarded-Proto,
+        # and X-Forwarded-Host headers when it's the terminating proxy.
+    }
+}
+
+# This block handles HTTP requests and redirects them to HTTPS.
+# Caddy usually does this automatically when a site is defined with a domain name like above.
+# However, to be explicit:
+http://plannerus.com {
+    redir https://plannerus.com{uri} permanent
 }
