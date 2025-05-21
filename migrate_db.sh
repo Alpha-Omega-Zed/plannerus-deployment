@@ -38,8 +38,8 @@ sudo docker compose rm -f web worker cron seeder proxy autoheal || echo "Some se
 echo "Ensuring database service ($NEW_DB_CONTAINER_NAME) is running..."
 sudo docker compose up -d db
 
-echo "Waiting for database service to initialize (60 seconds)..."
-sleep 60 # Give PostgreSQL time to start, especially if it's initializing
+echo "Waiting for database service to initialize (20 seconds)..."
+sleep 20 # Give PostgreSQL time to start, especially if it's initializing
 # Check if DB is ready
 MAX_RETRIES=5
 RETRY_COUNT=0
