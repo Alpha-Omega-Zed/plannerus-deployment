@@ -11,7 +11,7 @@ NEW_DB_NAME="openproject"
 NEW_DB_USER="openproject"
 NEW_DB_PASS="openproject" # The password for the NEW_DB_USER
 
-POSTGRES_ADMIN_USER="postgress" # Default superuser in PostgreSQL to create users/databases
+POSTGRES_ADMIN_USER="postgres" # Default superuser in PostgreSQL to create users/databases
 
 # --- Script Start ---
 echo "=== OpenProject Database Migration Script ==="
