@@ -3,10 +3,10 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- Configuration ---
 EFS_MOUNT_PATH="/mnt/efs_share"
-DUMP_FILENAME="openproject_backup.dump" # Change if your dump has a different name or is a custom format (e.g., .dump)
+DUMP_FILENAME="openproject_backup.sql" # Change if your dump has a different name or is a custom format (e.g., .dump)
 DB_DUMP_ON_EFS="$EFS_MOUNT_PATH/$DUMP_FILENAME"
 
-NEW_DB_CONTAINER_NAME="openproject-docker-compose-db-1"
+NEW_DB_CONTAINER_NAME="openproject-docker-compose-db-1" # As specified by you
 NEW_DB_NAME="openproject"
 NEW_DB_USER="openproject"
 NEW_DB_PASS="openproject" # The password for the NEW_DB_USER
@@ -84,13 +84,13 @@ echo "Restoring database from '$CONTAINER_DUMP_PATH' as user '$NEW_DB_USER'..."
 # This command is for a PLAIN SQL DUMP (.sql file)
 # If your DUMP_FILENAME is a custom format (e.g., .dump from pg_dump -Fc),
 # you need to use pg_restore instead. See commented example below.
-# sudo docker exec -i $NEW_DB_CONTAINER_NAME psql -U $NEW_DB_USER -d $NEW_DB_NAME < "$DB_DUMP_ON_EFS" # Alternative for direct pipe, might need careful quoting
+sudo docker exec -i $NEW_DB_CONTAINER_NAME psql -U $NEW_DB_USER -d $NEW_DB_NAME < "$DB_DUMP_ON_EFS" # Alternative for direct pipe, might need careful quoting
 # More robust for plain SQL with file copied into container:
 # sudo docker exec -it $NEW_DB_CONTAINER_NAME psql -U $NEW_DB_USER -d $NEW_DB_NAME -f $CONTAINER_DUMP_PATH
 
 # If using pg_dump -Fc (custom format, e.g. DUMP_FILENAME="openproject_backup.dump"):
 # echo "Restoring custom-format database dump..."
-sudo docker exec -t $NEW_DB_CONTAINER_NAME pg_restore -U $NEW_DB_USER -d $NEW_DB_NAME -v $CONTAINER_DUMP_PATH
+# sudo docker exec -t $NEW_DB_CONTAINER_NAME pg_restore -U $NEW_DB_USER -d $NEW_DB_NAME -v $CONTAINER_DUMP_PATH
 # Note: pg_restore does not typically need --clean or --if-exists if the database was just freshly created and is empty.
 
 echo "Database restore command executed. Check output above for errors."
