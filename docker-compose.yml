@@ -33,7 +33,7 @@ services:
     <<: *restart_policy
     stop_grace_period: "3s"
     volumes:
-      - "${MIGRATION_PATH:-/mnt/efs_share/migrated_pgdata}:/var/lib/postgresql/data"
+      - "${MIGRATION_PATH:-pgdata}:/var/lib/postgresql/data"
     environment:
       POSTGRESS_USER: openproject
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openproject}
