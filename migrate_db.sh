@@ -3,7 +3,7 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- Configuration ---
 EFS_MOUNT_PATH="/mnt/efs_share"
-DUMP_FILENAME="openproject_backup.sql" # Change if your dump has a different name or is a custom format (e.g., .dump)
+DUMP_FILENAME="openproject_backup.dump" # Change if your dump has a different name or is a custom format (e.g., .dump)
 DB_DUMP_ON_EFS="$EFS_MOUNT_PATH/$DUMP_FILENAME"
 
 NEW_DB_CONTAINER_NAME="openproject-docker-compose-db-1"
