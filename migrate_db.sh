@@ -2,7 +2,7 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- Configuration ---
-EFS_MOUNT_PATH="./mnt/efs_share"
+EFS_MOUNT_PATH="/mnt/efs_share"
 DUMP_FILENAME="openproject_dump.sql" # Change if your dump has a different name or is a custom format (e.g., .dump)
 DB_DUMP_ON_EFS="$EFS_MOUNT_PATH/$DUMP_FILENAME"
 
