@@ -2,11 +2,11 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- Configuration ---
-EFS_MOUNT_PATH="/mnt/efs_share"
+EFS_MOUNT_PATH="./mnt/efs_share"
 DUMP_FILENAME="openproject_dump.sql" # Change if your dump has a different name or is a custom format (e.g., .dump)
 DB_DUMP_ON_EFS="$EFS_MOUNT_PATH/$DUMP_FILENAME"
 
-NEW_DB_CONTAINER_NAME="openproject-docker-compose-db-1" # As specified by you
+NEW_DB_CONTAINER_NAME="plannerus-deployment-db-1" # As specified by you
 NEW_DB_NAME="openproject"
 NEW_DB_USER="openproject"
 NEW_DB_PASS="openproject" # The password for the NEW_DB_USER
@@ -25,8 +25,8 @@ fi
 echo "Found database dump file: $DB_DUMP_ON_EFS"
 
 # 2. Navigate to docker-compose directory (optional, assumes script is run from there or path is adjusted)
-# cd ~/openproject-docker-compose || { echo "ERROR: Could not navigate to openproject-docker-compose directory."; exit 1; }
-echo "Assuming current directory is your openproject-docker-compose setup."
+# cd ~/plannerus-deployment || { echo "ERROR: Could not navigate to plannerus-deployment directory."; exit 1; }
+echo "Assuming current directory is your plannerus-deployment setup."
 
 # 3. Stop relevant application services (db service can remain running or be started next)
 echo "Stopping application services (web, worker, cron, seeder, proxy, autoheal)..."
