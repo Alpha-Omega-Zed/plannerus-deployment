@@ -54,4 +54,16 @@ plannerus.com {
 # However, to be explicit:
 http://plannerus.com {
     redir https://plannerus.com{uri} permanent
+
+    handle /.well-known/acme-challenge/* {
+        root * /var/www/certbot
+        file_server
+        header {
+            Content-Security-Policy "default-src 'none';"
+            X-Content-Type-Options "nosniff"
+            X-Frame-Options "DENY"
+            X-XSS-Protection "1; mode=block"
+        }
+    }
+
 }
