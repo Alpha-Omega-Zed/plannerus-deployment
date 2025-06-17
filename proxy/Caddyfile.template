@@ -28,19 +28,6 @@ plannerus.com {
         # -Server
     }
 
-    # ACME challenge location
-    handle /.well-known/acme-challenge/* {
-        root * /var/www/certbot
-        file_server
-        header {
-            Content-Security-Policy "default-src 'none';"
-            X-Content-Type-Options "nosniff"
-            X-Frame-Options "DENY"
-            X-XSS-Protection "1; mode=block"
-        }
-    }
-
-
     # Reverse proxy all requests to the OpenProject web service
     # ${APP_HOST} will be replaced with 'web' by the Dockerfile build process
     reverse_proxy http://${APP_HOST}:8080 {
@@ -55,8 +42,8 @@ plannerus.com {
 http://plannerus.com {
     redir https://plannerus.com{uri} permanent
 
-    handle /.well-known/acme-challenge/* {
-        root * /var/www/certbot
+    handle /.well-known/acme-challenge/ {
+        root /var/www/certbot
         file_server
         header {
             Content-Security-Policy "default-src 'none';"
