@@ -6,10 +6,11 @@
     # trusted_proxies static <IP_RANGE_OF_YOUR_NLB_IF_ANY>
 }
 
-plannerus.com {
+stage-plannerus.aozdev.com {
     # Configure Caddy to use your provided SSL certificates
     # These paths are *inside* the Caddy container (we mount them in docker-compose)
-    tls /etc/ssl/caddy/fullchain.pem /etc/ssl/caddy/privkey.pem
+    
+    # tls /etc/ssl/caddy/fullchain.pem /etc/ssl/caddy/privkey.pem
 
     # Standard logging to stdout
     log {
@@ -28,16 +29,16 @@ plannerus.com {
         # -Server
     }
 
-    handle /.well-known/acme-challenge/* {
-        root * /var/www/certbot
-        file_server
-        header {
-            Content-Security-Policy "default-src 'none';"
-            X-Content-Type-Options "nosniff"
-            X-Frame-Options "DENY"
-            X-XSS-Protection "1; mode=block"
-        }
-    }
+    #handle /.well-known/acme-challenge/* {
+    #    root * /var/www/certbot
+    #    file_server
+    #    header {
+    #        Content-Security-Policy "default-src 'none';"
+    #        X-Content-Type-Options "nosniff"
+    #        X-Frame-Options "DENY"
+    #        X-XSS-Protection "1; mode=block"
+    #    }
+    #}
 
     # Reverse proxy all requests to the OpenProject web service
     # ${APP_HOST} will be replaced with 'web' by the Dockerfile build process
@@ -50,6 +51,6 @@ plannerus.com {
 # This block handles HTTP requests and redirects them to HTTPS.
 # Caddy usually does this automatically when a site is defined with a domain name like above.
 # However, to be explicit:
-http://plannerus.com {
-    redir https://plannerus.com{uri} permanent
+http://stage-plannerus.aozdev.com {
+    redir https://stage-plannerus.aozdev.com{uri} permanent
 }
