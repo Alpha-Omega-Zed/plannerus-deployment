@@ -6,7 +6,7 @@
     # trusted_proxies static <IP_RANGE_OF_YOUR_NLB_IF_ANY>
 }
 
-stage-plannerus.aozdev.com {
+http://stage-plannerus.aozdev.com {
     # Configure Caddy to use your provided SSL certificates
     # These paths are *inside* the Caddy container (we mount them in docker-compose)
     
@@ -29,20 +29,24 @@ stage-plannerus.aozdev.com {
         # -Server
     }
 
-    #handle /.well-known/acme-challenge/* {
-    #    root * /var/www/certbot
-    #    file_server
-    #    header {
-    #        Content-Security-Policy "default-src 'none';"
-    #        X-Content-Type-Options "nosniff"
-    #        X-Frame-Options "DENY"
-    #        X-XSS-Protection "1; mode=block"
-    #    }
-    #}
+    handle /.well-known/acme-challenge/* {
+        root * /var/www/certbot
+        file_server
+        header {
+            Content-Security-Policy "default-src 'none';"
+            X-Content-Type-Options "nosniff"
+            X-Frame-Options "DENY"
+            X-XSS-Protection "1; mode=block"
+        }
+    }
 
     # Reverse proxy all requests to the OpenProject web service
     # ${APP_HOST} will be replaced with 'web' by the Dockerfile build process
     reverse_proxy http://${APP_HOST}:8080 {
+
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-For {remote_host}
         # Caddy v2 automatically sets appropriate X-Forwarded-For, X-Forwarded-Proto,
         # and X-Forwarded-Host headers when it's the terminating proxy.
     }
@@ -51,6 +55,6 @@ stage-plannerus.aozdev.com {
 # This block handles HTTP requests and redirects them to HTTPS.
 # Caddy usually does this automatically when a site is defined with a domain name like above.
 # However, to be explicit:
-http://stage-plannerus.aozdev.com {
-    redir https://stage-plannerus.aozdev.com{uri} permanent
-}
+#http://stage-plannerus.aozdev.com {
+#    redir https://stage-plannerus.aozdev.com{uri} permanent
+#}
