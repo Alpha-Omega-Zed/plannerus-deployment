@@ -1,0 +1,128 @@
+name: Run Plannerus deployment
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        required: true
+        type: string
+      release_image:
+        required: true
+        type: string
+      openproject_version:
+        required: true
+        type: string
+      environment_version_id:
+        required: true
+        type: string
+      confirmation:
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    environment: plannerus-production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      INSTANCE_ID: ${{ vars.PLANNERUS_INSTANCE_ID }}
+      ROLE_ARN: ${{ vars.PLANNERUS_DEPLOY_ROLE_ARN }}
+      RUNTIME_SECRET_ID: ${{ vars.PLANNERUS_RUNTIME_SECRET_ID }}
+      MODE: ${{ inputs.mode }}
+      RELEASE_IMAGE: ${{ inputs.release_image }}
+      OPENPROJECT_VERSION: ${{ inputs.openproject_version }}
+      ENVIRONMENT_VERSION_ID: ${{ inputs.environment_version_id }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Validate the protected request
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$MODE" == deploy || "$MODE" == upgrade ]]
+          if [[ "$MODE" == deploy ]]; then [[ "$CONFIRMATION" == DEPLOY ]]; else [[ "$CONFIRMATION" == UPGRADE ]]; fi
+          [[ "$OPENPROJECT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$ENVIRONMENT_VERSION_ID" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$ENVIRONMENT_VERSION_ID" != null ]]
+          [[ "$RELEASE_IMAGE" == current || "$RELEASE_IMAGE" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9/_-]+@sha256:[0-9a-f]{64}$ ]]
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]{8,17}$ ]]
+          [[ "$RUNTIME_SECRET_ID" =~ ^[A-Za-z0-9/_+=.@-]{1,512}$ ]]
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: plannerus-${{ inputs.mode }}-${{ github.run_id }}
+
+      - name: Verify the exact application VM and deploy through SSM
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          [[ "$account" == "$AWS_ACCOUNT_ID" ]]
+          instance="$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0]' --output json)"
+          jq -e '
+            .State.Name == "running" and
+            .MetadataOptions.HttpTokens == "required" and
+            ([.Tags[] | select(.Key == "project_name" and .Value == "plannerus")] | length == 1) and
+            ([.Tags[] | select(.Key == "Environment" and .Value == "blue")] | length == 1)
+          ' <<<"$instance" >/dev/null
+
+          bundle_sha="$GITHUB_SHA"
+          remote_script="$(printf '%s\n' \
+            'set -Eeuo pipefail' \
+            'command -v aws >/dev/null || { echo "AWS CLI is required on the Plannerus VM" >&2; exit 1; }' \
+            'command -v curl >/dev/null' \
+            'command -v tar >/dev/null' \
+            "bundle_sha=$bundle_sha" \
+            'release_root=/opt/plannerus-deployment/releases' \
+            'release_dir=$release_root/$bundle_sha' \
+            'install -d -o root -g root -m 755 "$release_root"' \
+            'if [ ! -d "$release_dir" ]; then' \
+            '  archive=/tmp/plannerus-deployment-$bundle_sha.tar.gz' \
+            '  staging=$release_root/.incomplete-$bundle_sha-$$' \
+            '  curl -fsSL --retry 3 "https://codeload.github.com/Alpha-Omega-Zed/plannerus-deployment/tar.gz/$bundle_sha" -o "$archive"' \
+            '  install -d -o root -g root -m 755 "$staging"' \
+            '  tar -xzf "$archive" --strip-components=1 -C "$staging"' \
+            '  printf "%s\n" "$bundle_sha" >"$staging/.bundle-commit"' \
+            '  chown -R root:root "$staging"' \
+            '  chmod -R go-w "$staging"' \
+            '  mv "$staging" "$release_dir"' \
+            'fi' \
+            'test "$(cat "$release_dir/.bundle-commit")" = "$bundle_sha"' \
+            'ln -sfn "$release_dir" /opt/plannerus-deployment/current' \
+            "export PLANNERUS_RUNTIME_SECRET_ID=$RUNTIME_SECRET_ID" \
+            "exec bash /opt/plannerus-deployment/current/scripts/deploy --mode $MODE --image '$RELEASE_IMAGE' --version '$OPENPROJECT_VERSION' --env-version '$ENVIRONMENT_VERSION_ID'")"
+          payload="$(printf %s "$remote_script" | base64 | tr -d '\n')"
+          parameters="$(jq -cn --arg command "printf %s '$payload' | base64 -d | bash" '{commands:[$command]}')"
+          command_id="$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$INSTANCE_ID" \
+            --timeout-seconds 4200 \
+            --comment "Plannerus $MODE from GitHub run $GITHUB_RUN_ID" \
+            --parameters "$parameters" \
+            --query Command.CommandId --output text)"
+
+          result=Pending
+          for _ in $(seq 1 280); do
+            result="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || printf Pending)"
+            case "$result" in Pending|InProgress|Delayed) sleep 15 ;; *) break ;; esac
+          done
+          echo "SSM command $command_id: $result"
+          [[ "$result" == Success ]]
+
+          {
+            echo '## Plannerus deployment completed'
+            echo
+            printf '%s\n' "- Mode: \`$MODE\`"
+            printf '%s\n' "- Image: \`$RELEASE_IMAGE\`"
+            printf '%s\n' "- OpenProject: \`$OPENPROJECT_VERSION\`"
+            printf '%s\n' "- Environment version: \`$ENVIRONMENT_VERSION_ID\`"
+            printf '%s\n' "- Source bundle: \`$bundle_sha\`"
+          } >> "$GITHUB_STEP_SUMMARY"

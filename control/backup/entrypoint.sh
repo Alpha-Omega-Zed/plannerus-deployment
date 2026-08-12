@@ -1,4 +1,6 @@
 #!/bin/bash
+echo 'The legacy raw-volume backup is disabled. Use scripts/deploy for matched logical DB and attachment backups.' >&2
+exit 2
 set -e
 
 timestamp=$(date +%s)

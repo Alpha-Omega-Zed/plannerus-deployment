@@ -1,0 +1,38 @@
+name: Deploy Plannerus
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_image:
+        description: Immutable ECR digest from the Plannerus build, or current for an environment-only redeploy
+        required: true
+        default: current
+        type: string
+      openproject_version:
+        description: Expected OpenProject version, for example 17.0.1
+        required: true
+        default: 17.0.1
+        type: string
+      environment_version_id:
+        description: Secrets Manager VersionId for plannerus/production/runtime-env
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_run-deployment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      mode: deploy
+      release_image: ${{ inputs.release_image }}
+      openproject_version: ${{ inputs.openproject_version }}
+      environment_version_id: ${{ inputs.environment_version_id }}
+      confirmation: ${{ inputs.confirmation }}

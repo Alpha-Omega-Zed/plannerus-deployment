@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  echo "usage: $0 validate FILE | pull FILE [VERSION_ID] | push FILE --confirm UPDATE-PRODUCTION-ENV" >&2
+  exit 2
+}
+
+secret_id="${PLANNERUS_RUNTIME_SECRET_ID:-plannerus/production/runtime-env}"
+region="${AWS_REGION:-eu-west-1}"
+command_name="${1:-}"
+file="${2:-}"
+[[ -n "$command_name" && -n "$file" ]] || usage
+
+validate() {
+  local input="$1" key
+  [[ -f "$input" && ! -L "$input" ]] || { echo "not a regular file: $input" >&2; exit 1; }
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" =~ ^[A-Z][A-Z0-9_]*=.*$ ]] || { echo "invalid dotenv line" >&2; exit 1; }
+    [[ "$line" != *'$('* && "$line" != *'`'* ]] || { echo "shell expansion is not allowed" >&2; exit 1; }
+  done <"$input"
+  for key in POSTGRES_PASSWORD DATABASE_URL SECRET_KEY_BASE OPDATA OPENPROJECT_HOST__NAME PLANNERUS_AI_IMAGE DEPLOY_STATE_DIR; do
+    grep -Eq "^${key}=.+" "$input" || { echo "missing key: $key" >&2; exit 1; }
+  done
+  grep -Eq '^OPENPROJECT_HOST__NAME=app\.plannerus\.com$' "$input" || { echo 'host must be app.plannerus.com' >&2; exit 1; }
+  grep -Eq '^DATABASE_URL=postgres://openproject:.+@db/openproject([?].*)?$' "$input" || { echo 'DATABASE_URL must target the persistent local OpenProject database service' >&2; exit 1; }
+  secret_key="$(sed -n 's/^SECRET_KEY_BASE=//p' "$input" | tail -n1)"
+  [[ ${#secret_key} -ge 64 ]] || { echo 'SECRET_KEY_BASE must contain at least 64 characters' >&2; exit 1; }
+  grep -Eq '^OPDATA=/home/ubuntu/plannerus-deployment/opdata/files$' "$input" || { echo 'OPDATA must be the current persistent attachment path' >&2; exit 1; }
+  grep -Eq '^DEPLOY_STATE_DIR=/var/lib/plannerus-deploy$' "$input" || { echo 'DEPLOY_STATE_DIR must be the protected deployment state path' >&2; exit 1; }
+  grep -Eq '^PLANNERUS_AI_IMAGE=[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9/_-]+@sha256:[0-9a-f]{64}$' "$input" \
+    || { echo 'PLANNERUS_AI_IMAGE must be an immutable ECR digest' >&2; exit 1; }
+  grep -Eq '^OPENPROJECT_GOOD__JOB__ENABLE__CRON=false$' "$input" || { echo 'OpenProject scheduled cron must remain disabled' >&2; exit 1; }
+  grep -Eq '^IMAP_ENABLED=false$' "$input" || { echo 'IMAP must remain disabled' >&2; exit 1; }
+}
+
+case "$command_name" in
+  validate)
+    validate "$file"
+    echo 'environment file is valid'
+    ;;
+  pull)
+    version_id="${3:-}"
+    args=(secretsmanager get-secret-value --region "$region" --secret-id "$secret_id" --query SecretString --output text)
+    [[ -z "$version_id" ]] || args+=(--version-id "$version_id")
+    temporary="$file.incomplete.$$"
+    umask 077
+    aws "${args[@]}" >"$temporary"
+    validate "$temporary"
+    mv "$temporary" "$file"
+    chmod 600 "$file"
+    echo "environment written to $file without printing secret values"
+    ;;
+  push)
+    [[ "${3:-}" == --confirm && "${4:-}" == UPDATE-PRODUCTION-ENV ]] || usage
+    validate "$file"
+    result="$(aws secretsmanager put-secret-value --region "$region" --secret-id "$secret_id" --secret-string "file://$file" --query VersionId --output text)"
+    [[ "$result" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$result" != null ]] || { echo 'AWS returned an invalid version ID' >&2; exit 1; }
+    echo "environment version created: $result"
+    echo 'Run Deploy Plannerus with image=current and this environment version.'
+    ;;
+  *) usage ;;
+esac

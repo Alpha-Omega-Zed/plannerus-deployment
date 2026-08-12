@@ -1,0 +1,36 @@
+name: Upgrade Plannerus
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_image:
+        description: Immutable ECR digest built from the reviewed OpenProject upgrade PR
+        required: true
+        type: string
+      openproject_version:
+        description: Target OpenProject version, for example 17.7.1
+        required: true
+        type: string
+      environment_version_id:
+        description: Secrets Manager VersionId for plannerus/production/runtime-env
+        required: true
+        type: string
+      confirmation:
+        description: Type UPGRADE
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  upgrade:
+    uses: ./.github/workflows/_run-deployment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      mode: upgrade
+      release_image: ${{ inputs.release_image }}
+      openproject_version: ${{ inputs.openproject_version }}
+      environment_version_id: ${{ inputs.environment_version_id }}
+      confirmation: ${{ inputs.confirmation }}

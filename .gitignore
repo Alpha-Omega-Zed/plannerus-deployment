@@ -6,3 +6,9 @@ backups/
 opdata/
 
 ssl
+runtime.env
+state/
+backend/.env.production
+backend/logs/
+*.dump
+*.sql

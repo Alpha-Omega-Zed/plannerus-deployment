@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+[[ "$EUID" -eq 0 ]] || die 'rollback must run as root'
+assert_target
+latest="$(find "$STATE_DIR/history" -type f -name '*.json' -print | sort | tail -n1)"
+[[ -n "$latest" ]] || die 'no deployment history exists'
+[[ "$(jq -r .schema_changed "$latest")" == false ]] \
+  || die 'automatic rollback is forbidden after a database migration; restore the matched backup under a reviewed recovery procedure'
+previous="$(jq -r .previous_slot "$latest")"
+[[ "$previous" == blue || "$previous" == green ]] || die 'the previous release was the legacy one-slot deployment; use the documented bootstrap recovery'
+service="$(slot_web "$previous")"
+ai_service="$(slot_ai "$previous")"
+compose --profile "$previous" up -d --no-deps "$ai_service"
+wait_healthy "$ai_service" || die 'previous AI slot is unhealthy'
+compose --profile "$previous" up -d --no-deps "$service"
+wait_healthy "$service" || die 'previous slot is unhealthy'
+write_upstream "$service"
+reload_proxy
+current="$(<"$STATE_DIR/active-slot")"
+compose --profile "$current" stop "$(slot_web "$current")" "$(slot_worker "$current")" "$(slot_ai "$current")" || true
+compose --profile "$previous" up -d --no-deps "$(slot_worker "$previous")"
+printf '%s\n' "$previous" >"$STATE_DIR/active-slot"
+log "rolled back to the $previous slot"

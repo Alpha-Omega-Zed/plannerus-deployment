@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+usage() {
+  echo "usage: $0 --mode deploy|upgrade --image current|ECR@sha256 --version X.Y.Z --env-version VERSION_ID" >&2
+  exit 2
+}
+
+mode= image= version= env_version=
+while (($#)); do
+  case "$1" in
+    --mode) mode="$2"; shift 2 ;;
+    --image) image="$2"; shift 2 ;;
+    --version) version="$2"; shift 2 ;;
+    --env-version) env_version="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ "$mode" == deploy || "$mode" == upgrade ]] || usage
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
+[[ "$env_version" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$env_version" != null ]] || usage
+
+for tool in aws curl docker jq flock sha256sum tar; do require "$tool"; done
+[[ "$EUID" -eq 0 ]] || die 'deploy must run as root through SSM'
+assert_target
+install -d -m 700 "$STATE_DIR" "$STATE_DIR/proxy" "$STATE_DIR/backups" "$STATE_DIR/history"
+exec 9>"$STATE_DIR/deploy.lock"
+flock -n 9 || die 'another Plannerus deployment is running'
+
+bash "$SCRIPT_DIR/environment" pull "$RUNTIME_ENV" "$env_version"
+export DEPLOY_STATE_DIR="$STATE_DIR"
+
+active=legacy
+[[ ! -s "$STATE_DIR/active-slot" ]] || active="$(<"$STATE_DIR/active-slot")"
+[[ "$active" == legacy || "$active" == blue || "$active" == green ]] || die 'invalid active-slot state'
+
+if [[ ! -s "$IMAGE_ENV" ]]; then
+  existing="$(current_legacy_image)" || die 'cannot initialize image state without the current web container'
+  existing_ai="$(current_legacy_ai_image)" || die 'cannot initialize image state without the current AI container'
+  require_digest "$existing"
+  require_digest "$existing_ai"
+  write_image_state "$existing" "$existing" "$existing" "$existing_ai" "$existing_ai"
+fi
+
+blue_image="$(read_state_value PLANNERUS_BLUE_IMAGE)"
+green_image="$(read_state_value PLANNERUS_GREEN_IMAGE)"
+current_image="$blue_image"
+blue_ai_image="$(read_state_value PLANNERUS_BLUE_AI_IMAGE)"
+green_ai_image="$(read_state_value PLANNERUS_GREEN_AI_IMAGE)"
+candidate_ai_image="$(sed -n 's/^PLANNERUS_AI_IMAGE=//p' "$RUNTIME_ENV" | tail -n1)"
+require_digest "$blue_ai_image"
+require_digest "$green_ai_image"
+require_digest "$candidate_ai_image"
+[[ "$active" != green ]] || current_image="$green_image"
+if [[ "$active" == legacy ]]; then
+  current_image="$(current_legacy_image)"
+fi
+[[ "$image" != current ]] || image="$current_image"
+require_digest "$image"
+
+inactive=green
+[[ "$active" != green ]] || inactive=blue
+if [[ "$inactive" == blue ]]; then blue_image="$image"; else green_image="$image"; fi
+if [[ "$inactive" == blue ]]; then blue_ai_image="$candidate_ai_image"; else green_ai_image="$candidate_ai_image"; fi
+write_image_state "$blue_image" "$green_image" "$image" "$blue_ai_image" "$green_ai_image"
+
+docker pull "$image"
+label_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")"
+[[ -z "$label_version" || "$label_version" == '<no value>' || "$label_version" == "$version" ]] \
+  || die "image version label $label_version does not match requested $version"
+
+candidate_pending="$(compose --profile migration run --rm --no-deps --entrypoint bash migrate -lc \
+  'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection.migration_context.needs_migration?.to_s)"')"
+[[ "$candidate_pending" == true || "$candidate_pending" == false ]] || die 'could not determine migration state'
+[[ "$mode" != deploy || "$candidate_pending" == false ]] \
+  || die 'this image has database migrations; use Upgrade Plannerus instead of Deploy Plannerus'
+
+active_web=web
+active_worker=worker
+active_ai=aitextfeature-backend
+active_container=plannerus-blue-web-1
+if [[ "$active" == blue || "$active" == green ]]; then
+  active_web="$(slot_web "$active")"
+  active_worker="$(slot_worker "$active")"
+  active_ai="$(slot_ai "$active")"
+  active_container="$(compose --profile "$active" ps -q "$active_web")"
+fi
+[[ -n "$active_container" ]] || die 'the active OpenProject web container was not found'
+current_version="$(running_openproject_version "$active_container")"
+validate_version_transition "$current_version" "$version" "$mode"
+getent ahostsv4 app.plannerus.com | awk '{print $1}' | grep -Fxq "$INSTANCE_PUBLIC_IP" \
+  || die 'app.plannerus.com does not resolve to this VM; refusing to deploy'
+write_upstream "$active_web"
+compose run --rm --no-deps proxy caddy validate --config /etc/caddy/Caddyfile >/dev/null
+inactive_web="$(slot_web "$inactive")"
+inactive_worker="$(slot_worker "$inactive")"
+inactive_ai="$(slot_ai "$inactive")"
+release_id="$(date -u +%Y%m%dT%H%M%SZ)-${version}-${inactive}"
+schema_changed=false
+maintenance=false
+
+recover_before_migration() {
+  local exit_code=$?
+  (( exit_code != 0 )) || return 0
+  if [[ "$schema_changed" == false && "$maintenance" == true ]]; then
+    write_upstream "$active_web" || true
+    reload_proxy || true
+    if [[ "$active" == legacy ]]; then
+      docker start plannerus-blue-web-1 plannerus-blue-worker-1 >/dev/null 2>&1 || true
+    else
+      compose --profile blue --profile green start "$active_ai" "$active_web" "$active_worker" || true
+    fi
+    docker start plannerus-blue-autoheal-1 >/dev/null 2>&1 || true
+  fi
+  exit "$exit_code"
+}
+trap recover_before_migration EXIT
+
+if [[ "$mode" == upgrade && "$candidate_pending" == true ]]; then
+  maintenance=true
+  write_upstream maintenance
+  reload_proxy
+  compose --profile blue --profile green stop web-blue worker-blue ai-blue web-green worker-green ai-green || true
+  docker stop plannerus-blue-web-1 plannerus-blue-worker-1 >/dev/null 2>&1 || true
+  docker stop plannerus-blue-autoheal-1 >/dev/null 2>&1 || true
+  before_counts="$(capture_counts)"
+  backup_path="$(backup_data "$release_id")"
+  log "matched database and attachment backup: $backup_path"
+  schema_changed=true
+  compose --profile migration run --rm --no-deps migrate
+  pending_after="$(compose --profile migration run --rm --no-deps --entrypoint bash migrate -lc \
+    'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection.migration_context.needs_migration?.to_s)"')"
+  [[ "$pending_after" == false ]] || die 'migrations remain pending after the seeder'
+  after_counts="$(capture_counts)"
+  [[ "$before_counts" == "$after_counts" ]] || die 'core data counts changed during migration'
+fi
+
+compose --profile "$inactive" up -d --no-deps "$inactive_ai"
+wait_healthy "$inactive_ai" || die "inactive AI slot failed health checks: $inactive_ai"
+compose --profile "$inactive" up -d --no-deps "$inactive_web"
+wait_healthy "$inactive_web" || die "inactive slot failed health checks: $inactive_web"
+write_upstream "$inactive_web"
+reload_proxy
+plannerus_smoke
+
+compose --profile blue --profile green stop "$active_web" "$active_worker" >/dev/null 2>&1 || true
+docker stop plannerus-blue-web-1 plannerus-blue-worker-1 >/dev/null 2>&1 || true
+if [[ "$active" == legacy ]]; then
+  docker stop aitextfeature-backend >/dev/null 2>&1 || true
+else
+  compose --profile "$active" stop "$active_ai" >/dev/null 2>&1 || true
+fi
+compose --profile "$inactive" up -d --no-deps "$inactive_worker"
+docker start plannerus-blue-autoheal-1 >/dev/null 2>&1 || true
+
+printf '%s\n' "$active" >"$STATE_DIR/previous-slot"
+printf '%s\n' "$inactive" >"$STATE_DIR/active-slot"
+jq -n --arg id "$release_id" --arg image "$image" --arg version "$version" \
+  --arg previous "$active" --arg active "$inactive" --arg env_version "$env_version" \
+  --argjson schema_changed "$schema_changed" \
+  '{release_id:$id,image:$image,version:$version,previous_slot:$previous,active_slot:$active,environment_version:$env_version,schema_changed:$schema_changed}' \
+  >"$STATE_DIR/history/$release_id.json"
+
+maintenance=false
+trap - EXIT
+log "Plannerus $mode completed: $image is active in the $inactive slot"
