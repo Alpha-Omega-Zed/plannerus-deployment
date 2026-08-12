@@ -3,13 +3,14 @@ networks:
   backend:
 
 volumes:
-  pgdata:
+  pgdata-new:
   opdata:
 
 x-op-restart-policy: &restart_policy
   restart: unless-stopped
 x-op-image: &image
-  image: aozprod/plannerus:ai-merge-test
+  #image: openproject/openproject:16
+  image: aozprod/plannerus:v3
 x-op-app: &app
   <<: [*image, *restart_policy]
   environment:
@@ -30,14 +31,32 @@ x-op-app: &app
     - "${OPDATA:-opdata}:/var/openproject/assets"
 
 services:
+
+  ai-text-improvement-microservice:
+    image: aozprod/aitextfeature-backend:latest
+    container_name: aitextfeature-backend
+    networks:
+      - frontend
+      - backend
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./backend/logs:/backend/logs
+    env_file:
+      - ./backend/.env.production
+    ports:
+      - "${NODE_PORT}:${DOCKER_NODE_PORT}"
+      - "${DEBUGGER_PORT}:${DOCKER_DEBUGGER_PORT}"
+      - "${CLIENT_PORT}:${DOCKER_CLIENT_PORT}"
+
   db:
-    image: postgres:13
+    image: postgres:17
     <<: *restart_policy
     stop_grace_period: "3s"
     volumes:
-      - "${MIGRATION_PATH:-pgdata}:/var/lib/postgresql/data"
+      - "${MIGRATION_PATH:-pgdata-new}:/var/lib/postgresql/data"
     environment:
-      POSTGRESS_USER: openproject
+      POSTGRES_USER: openproject
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openproject}
       POSTGRES_DB: openproject
     networks:
@@ -59,10 +78,10 @@ services:
     ports:
       - "${PORT:-80}:80" # For HTTP (Caddy will redirect to HTTPS)
       - "${HTTPS_PORT:-443}:443" # For HTTPS
-    volumes:
+#    volumes:
       # Mount your SSL certificates from the host into the Caddy container (read-only)
-      - ./ssl/livecerts/fullchain.pem:/etc/ssl/caddy/fullchain.pem:ro
-      - ./ssl/livecerts/privkey.pem:/etc/ssl/caddy/privkey.pem:ro
+      #- ./ssl/livecerts/fullchain.pem:/etc/ssl/caddy/fullchain.pem:ro
+      #- ./ssl/livecerts/privkey.pem:/etc/ssl/caddy/privkey.pem:ro
       # Optional: Caddy data volume for its own state (e.g., if it were managing certs itself)
       # - caddy_data:/data
     depends_on:
