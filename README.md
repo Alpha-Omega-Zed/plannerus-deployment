@@ -24,6 +24,13 @@ The stale Plannerus 18/23 VMs are not deployment targets. The guarded scripts
 accept only AWS account `583909165557`, instance `i-0379bc93c416f5324`, and the
 tags `project_name=plannerus` and `Environment=blue`.
 
+The EC2 console name is `plannerus-production` and the public hostname always
+remains `app.plannerus.com`. A few internal Docker/ECR identifiers still contain
+`blue` because the live PostgreSQL volume and existing image repository were
+created under that name. They are compatibility identifiers, not a second
+environment; renaming the Docker project or database volume would disconnect
+the application from its data.
+
 ## What developers do
 
 ### Redeploy a code change
