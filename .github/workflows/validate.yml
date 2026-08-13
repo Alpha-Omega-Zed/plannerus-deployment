@@ -1,4 +1,4 @@
-name: Validate Plannerus deployment
+name: Check deployment files (never deploys)
 
 on:
   pull_request:

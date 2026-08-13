@@ -1,4 +1,4 @@
-name: Upgrade Plannerus
+name: Upgrade Plannerus (manual)
 
 on:
   workflow_dispatch:

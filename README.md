@@ -3,6 +3,10 @@
 Use this repository to deploy [app.plannerus.com](https://app.plannerus.com),
 change its environment, or run an OpenProject database upgrade.
 
+Nothing deploys on push or merge. Those events run **Check deployment files
+(never deploys)** only. Production changes happen only when a developer selects
+**Run workflow** on one of the manual actions below.
+
 ## Deploy code changes
 
 First build the image in
@@ -11,7 +15,7 @@ described in that repository's README. Copy the resulting ECR digest ending in
 `@sha256:...`.
 
 Then open
-[**Actions → Deploy Plannerus**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/deploy.yml),
+[**Actions → Deploy Plannerus (manual)**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/deploy.yml),
 select `main`, choose **Run workflow**, and enter:
 
 - `release_image`: the copied ECR digest;
@@ -57,7 +61,7 @@ bash scripts/environment push ./runtime.env --confirm UPDATE-PRODUCTION-ENV
 ```
 
 The last command prints a new VersionId. Open
-[**Actions → Deploy Plannerus**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/deploy.yml)
+[**Actions → Deploy Plannerus (manual)**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/deploy.yml)
 and enter:
 
 - `release_image`: `current`;
@@ -94,11 +98,13 @@ VM is temporary and is overwritten by the next deployment.
 Do not use this for an ordinary code change.
 
 1. In [Alpha-Omega-Zed/plannerus](https://github.com/Alpha-Omega-Zed/plannerus),
-   run **Prepare OpenProject upgrade** with the exact official tag.
-2. Review the generated PR, wait for **Plannerus CI**, and merge it.
-3. Run **Build immutable Plannerus image** and copy its digest and version.
+   run **Prepare OpenProject upgrade PR (manual)** with the exact official tag.
+2. Review every file and complete the whitelabel checklist in the generated PR.
+   Wait for **Plannerus CI (checks only; never deploys)**, then merge it.
+3. Run **Build immutable Plannerus image (manual)** and copy its digest and
+   version.
 4. Here, run
-   [**Upgrade Plannerus**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/upgrade.yml)
+   [**Upgrade Plannerus (manual)**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/upgrade.yml)
    with that digest, version, `environment_version_id=current`, and confirmation
    `UPGRADE`.
 5. Wait for success and test [app.plannerus.com](https://app.plannerus.com).
@@ -109,7 +115,7 @@ not.
 
 ## Roll back a normal release
 
-Run **Deploy Plannerus** again with the image digest and environment VersionId
+Run **Deploy Plannerus (manual)** again with the image digest and environment VersionId
 from the previous successful Deploy workflow summary. Do not run an older app
 image after a schema upgrade; use the recovery procedure in the technical
 reference.

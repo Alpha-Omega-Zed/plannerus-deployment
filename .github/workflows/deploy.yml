@@ -1,4 +1,4 @@
-name: Deploy Plannerus
+name: Deploy Plannerus (manual)
 
 on:
   workflow_dispatch:
