@@ -28,8 +28,6 @@ jobs:
           sed -i 's#replace-me@db#offline-only@db#' "$test_root/runtime.env"
           sed -i 's#SECRET_KEY_BASE=replace-with-at-least-64-random-characters#SECRET_KEY_BASE=offline_only_0000000000000000000000000000000000000000000000000000#' "$test_root/runtime.env"
           sed -i 's#AI_ENV_VERSION_ID=replace-with-secrets-manager-version-id#AI_ENV_VERSION_ID=offline-version-id#' "$test_root/runtime.env"
-          sed -i "s#AI_ENV_FILE=.*#AI_ENV_FILE=$test_root/ai.env#" "$test_root/runtime.env"
-          sed -i "s#AI_LOG_PATH=.*#AI_LOG_PATH=$test_root/ai-logs#" "$test_root/runtime.env"
           bash scripts/environment validate "$test_root/runtime.env"
           cp "$test_root/runtime.env" "$test_root/bad.env"
           sed -i 's#OPDATA=/home/ubuntu/plannerus-deployment/opdata/files#OPDATA=/tmp/empty#' "$test_root/bad.env"
@@ -37,6 +35,8 @@ jobs:
             echo 'unsafe persistent-data path was accepted' >&2
             exit 1
           fi
+          sed -i "s#AI_ENV_FILE=.*#AI_ENV_FILE=$test_root/ai.env#" "$test_root/runtime.env"
+          sed -i "s#AI_LOG_PATH=.*#AI_LOG_PATH=$test_root/ai-logs#" "$test_root/runtime.env"
           sed -i "s#DEPLOY_STATE_DIR=.*#DEPLOY_STATE_DIR=$test_root#" "$test_root/runtime.env"
           printf '%s\n' \
             'PORT=5000' \
