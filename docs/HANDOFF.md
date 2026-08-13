@@ -39,26 +39,27 @@ and approval for the protected environment, not an AWS user or local AWS keys.
 
 An AWS/GitHub administrator performs this once:
 
-1. In `aws-infrastructure/plannerus-deployment`, review and apply Terraform.
+1. Create protected GitHub environments before creating the AWS roles:
+   - in `Alpha-Omega-Zed/plannerus`: `plannerus-image-release` and
+     `plannerus-upgrade`;
+   - in `Alpha-Omega-Zed/plannerus-deployment`: `plannerus-production`.
+   Require reviewers, prevent self-review where available, and allow only
+   `main`. This prevents a first workflow run from auto-creating an unprotected
+   environment.
+2. In `aws-infrastructure/plannerus-deployment`, review and apply Terraform.
    Capture these outputs:
    - `github_image_publish_role_arn`;
    - `github_production_deploy_role_arn`;
    - `runtime_env_secret_arn`;
    - `instance_id` and `openproject_ecr_repository_url`.
-2. Create protected GitHub environments:
-   - in `Alpha-Omega-Zed/plannerus`: `plannerus-image-release` and
-     `plannerus-upgrade`;
-   - in `Alpha-Omega-Zed/plannerus-deployment`: `plannerus-production`.
-3. Require reviewers, prevent self-review where available, and allow only
-   `main` in each environment.
-4. Configure the variables listed in the deployment README using the exact
+3. Configure the variables listed in the deployment README using the exact
    Terraform outputs. Do not create AWS access-key GitHub secrets.
-5. Populate `plannerus/production/runtime-env` with the validated dotenv
+4. Populate `plannerus/production/runtime-env` with the validated dotenv
    payload. Terraform creates only the empty secret container and never stores
    secret values in Terraform state.
-6. Install and verify AWS CLI v2 on the application VM. The VM uses its EC2
+5. Install and verify AWS CLI v2 on the application VM. The VM uses its EC2
    instance role to fetch the selected secret version.
-7. Run repository validation, then a reviewed `release_image=current`
+6. Run repository validation, then a reviewed `release_image=current`
    deployment before permitting normal releases.
 
 ## Runtime secret: OpenProject and deployment configuration
