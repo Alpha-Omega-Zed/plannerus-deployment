@@ -1,7 +1,7 @@
 # Plannerus production operations
 
 Use this repository to deploy [app.plannerus.com](https://app.plannerus.com),
-change its environment, or run an OpenProject database upgrade.
+change its environment, or install a new OpenProject version.
 
 Nothing deploys on push or merge. Those events run **Check deployment files
 (never deploys)** only. Production changes happen only when a developer selects
@@ -30,15 +30,15 @@ process.
 The action starts the new app and AI containers in the inactive slot, checks
 them, switches traffic, and then stops the old slot. It does not recreate the
 database or attachment storage. If the image needs a database migration, Deploy
-stops and tells you to use Upgrade instead.
+stops and tells you to use **Install version upgrade in production (manual)**.
 
 ## Change the environment
 
 Environment values are in AWS Secrets Manager, not Git and not the VM.
 
-For environment editing only, you need the company AWS CLI profile. Build,
-Deploy, and Upgrade actions do not require local AWS credentials. Verify your
-AWS login before editing:
+For environment editing only, you need the company AWS CLI profile. Manual
+Build, Deploy, and production version-install actions do not require local AWS
+credentials. Verify your AWS login before editing:
 
 ```bash
 aws sts get-caller-identity
@@ -93,23 +93,32 @@ Copy the returned AI VersionId. Pull `runtime.env`, replace only
 Delete `runtime.env` and `/tmp/plannerus-ai.env` afterward. A direct edit on the
 VM is temporary and is overwritten by the next deployment.
 
-## Upgrade OpenProject
+## Install an OpenProject version update in production
 
 Do not use this for an ordinary code change.
 
+This is one three-stage process, not two competing kinds of upgrade:
+
+```text
+Create version-update PR (code only) → Build image → Install in production
+```
+
 1. In [Alpha-Omega-Zed/plannerus](https://github.com/Alpha-Omega-Zed/plannerus),
-   run **Prepare OpenProject upgrade PR (manual)** with the exact official tag.
+   run **Create OpenProject version-update PR (code only)** with the exact
+   official tag. This changes source code only.
 2. Review every file and complete the whitelabel checklist in the generated PR.
    Wait for **Plannerus CI (checks only; never deploys)**, then merge it.
 3. Run **Build immutable Plannerus image (manual)** and copy its digest and
    version.
 4. Here, run
-   [**Upgrade Plannerus (manual)**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/upgrade.yml)
+   [**Install version upgrade in production
+   (manual)**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/upgrade.yml)
    with that digest, version, `environment_version_id=current`, and confirmation
    `UPGRADE`.
 5. Wait for success and test [app.plannerus.com](https://app.plannerus.com).
 
-Upgrade creates a matched PostgreSQL and attachment backup before migrations.
+The production installation creates a matched PostgreSQL and attachment backup
+before migrations.
 Schema changes require a short maintenance window; normal Deploy releases do
 not.
 
@@ -122,9 +131,9 @@ reference.
 
 ## Where things live
 
-- `plannerus`: application code, Build, and source-upgrade action.
+- `plannerus`: application code, Build, and version-update PR action.
 - `plannerus-deployment`: this guide, production Compose, environment tools,
-  Deploy, and database Upgrade action.
+  Deploy, and production version-install action.
 - `aws-infrastructure/plannerus-deployment`: Terraform only.
 
 For architecture, authentication, secret contents, failure behavior, and

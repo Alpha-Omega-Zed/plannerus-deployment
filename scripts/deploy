@@ -91,7 +91,7 @@ candidate_pending="$(compose --profile migration run --rm --no-deps --entrypoint
   'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection_pool.migration_context.needs_migration?.to_s)"')"
 [[ "$candidate_pending" == true || "$candidate_pending" == false ]] || die 'could not determine migration state'
 [[ "$mode" != deploy || "$candidate_pending" == false ]] \
-  || die 'this image has database migrations; use Upgrade Plannerus instead of Deploy Plannerus'
+  || die 'this image has database migrations; use Install version upgrade in production instead of Deploy Plannerus'
 
 active_web=web
 active_worker=worker

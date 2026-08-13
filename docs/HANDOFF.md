@@ -23,7 +23,8 @@ The old Plannerus 18 and 23 VMs are not deployment targets.
 
 ## AWS authentication
 
-Manual Build, Deploy, and Upgrade actions use GitHub OIDC. GitHub requests a short-lived token,
+Manual Build, Deploy, and production version-install actions use GitHub OIDC.
+GitHub requests a short-lived token,
 AWS validates the repository and environment identity, and STS returns temporary
 credentials for that workflow run. No long-lived AWS access key is stored in
 GitHub or on a developer laptop.
@@ -38,7 +39,8 @@ All team members with repository access can run the actions. There is no
 reviewer gate. Only `main` is accepted, and deployments are serialized so two
 team members cannot deploy simultaneously.
 
-`Deploy Plannerus (manual)` and `Upgrade Plannerus (manual)` use
+`Deploy Plannerus (manual)` and `Install version upgrade in production
+(manual)` use
 `workflow_dispatch` only. A push or merge can run validation, but cannot request
 AWS deployment credentials and cannot change production.
 
@@ -92,7 +94,8 @@ The hostname never changes. PostgreSQL, cache, attachments, and Caddy state are
 shared rather than duplicated. A pre-cutover failure keeps or restores the old
 slot.
 
-For Upgrade, the action first enters maintenance, stops writers, creates a
+For a production version installation, the action first enters maintenance,
+stops writers, creates a
 custom-format PostgreSQL dump and attachment archive with checksums under
 `/var/lib/plannerus-deploy/backups`, runs the candidate seeder once, confirms no
 migrations remain, compares core record counts, and then performs the same
@@ -120,9 +123,10 @@ database/attachment recovery point is still required before replacing the VM.
 ## Ownership boundary
 
 - `Alpha-Omega-Zed/plannerus`: application source, CI, whitelabeling, Build, and
-  OpenProject source-upgrade preparation.
+  the code-only OpenProject version-update PR.
 - `Alpha-Omega-Zed/plannerus-deployment`: the only production Compose model,
-  environment validation, Deploy, Upgrade, and rollback logic.
+  environment validation, Deploy, production version installation, and rollback
+  logic.
 - `Alpha-Omega-Zed/aws-infrastructure/plannerus-deployment`: EC2, security
   group, Route53, ECR, IAM/OIDC, and empty Secrets Manager containers.
 

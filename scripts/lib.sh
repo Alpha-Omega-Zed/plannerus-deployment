@@ -91,7 +91,7 @@ validate_version_transition() {
   (( target_major <= current_major + 1 )) || die 'OpenProject major versions must be upgraded sequentially'
   if [[ "$mode" == deploy ]]; then
     [[ "$target" == "$current" ]] \
-      || die 'a normal deployment must retain the current OpenProject version; use Upgrade Plannerus'
+      || die 'a normal deployment must retain the current OpenProject version; use Install version upgrade in production'
   fi
 }
 

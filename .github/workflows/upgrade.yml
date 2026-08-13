@@ -1,10 +1,10 @@
-name: Upgrade Plannerus (manual)
+name: Install version upgrade in production (manual)
 
 on:
   workflow_dispatch:
     inputs:
       release_image:
-        description: Immutable ECR digest built from the reviewed OpenProject upgrade PR
+        description: Immutable ECR digest built from the reviewed OpenProject version-update PR
         required: true
         type: string
       openproject_version:
