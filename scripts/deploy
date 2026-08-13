@@ -82,7 +82,7 @@ label_version="$(docker image inspect --format '{{index .Config.Labels "org.open
   || die "image version label $label_version does not match requested $version"
 
 candidate_pending="$(compose --profile migration run --rm --no-deps --entrypoint bash migrate -lc \
-  'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection.migration_context.needs_migration?.to_s)"')"
+  'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection_pool.migration_context.needs_migration?.to_s)"')"
 [[ "$candidate_pending" == true || "$candidate_pending" == false ]] || die 'could not determine migration state'
 [[ "$mode" != deploy || "$candidate_pending" == false ]] \
   || die 'this image has database migrations; use Upgrade Plannerus instead of Deploy Plannerus'
@@ -141,7 +141,7 @@ if [[ "$mode" == upgrade && "$candidate_pending" == true ]]; then
   schema_changed=true
   compose --profile migration run --rm --no-deps migrate
   pending_after="$(compose --profile migration run --rm --no-deps --entrypoint bash migrate -lc \
-    'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection.migration_context.needs_migration?.to_s)"')"
+    'bundle exec rails runner "STDOUT.write(ActiveRecord::Base.connection_pool.migration_context.needs_migration?.to_s)"')"
   [[ "$pending_after" == false ]] || die 'migrations remain pending after the seeder'
   after_counts="$(capture_counts)"
   [[ "$before_counts" == "$after_counts" ]] || die 'core data counts changed during migration'
