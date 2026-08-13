@@ -17,6 +17,9 @@ This repository contains the only production `docker-compose.yml`. There is no
 control Compose or database-migration shortcut: all normal deployments and
 upgrades enter through the protected GitHub actions and `scripts/deploy`.
 
+For onboarding, AWS authentication, operator roles, and the exact runtime/AI
+secret split, read [docs/HANDOFF.md](docs/HANDOFF.md) before using an action.
+
 The stale Plannerus 18/23 VMs are not deployment targets. The guarded scripts
 accept only AWS account `583909165557`, instance `i-0379bc93c416f5324`, and the
 tags `project_name=plannerus` and `Environment=blue`.
