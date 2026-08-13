@@ -41,6 +41,9 @@ aws sts get-caller-identity
 # Account must be 583909165557.
 ```
 
+If the command fails or shows another account, stop and ask the team lead to
+configure your company AWS CLI profile.
+
 From this repository:
 
 ```bash
@@ -61,6 +64,9 @@ and enter:
 - `openproject_version`: the currently deployed version;
 - `environment_version_id`: the new VersionId;
 - `confirmation`: `DEPLOY`.
+
+Use the OpenProject version shown in the latest successful Deploy workflow
+summary if you do not know the currently deployed version.
 
 Delete the local `runtime.env` after the deployment. Never commit it.
 
@@ -103,9 +109,10 @@ not.
 
 ## Roll back a normal release
 
-Run **Deploy Plannerus** again with the previous image digest and previous
-environment VersionId. Do not run an older app image after a schema upgrade;
-use the recovery procedure in the technical reference.
+Run **Deploy Plannerus** again with the image digest and environment VersionId
+from the previous successful Deploy workflow summary. Do not run an older app
+image after a schema upgrade; use the recovery procedure in the technical
+reference.
 
 ## Where things live
 
