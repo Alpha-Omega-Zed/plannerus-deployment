@@ -34,6 +34,12 @@ flock -n 9 || die 'another Plannerus deployment is running'
 bash "$SCRIPT_DIR/environment" pull "$RUNTIME_ENV" "$env_version"
 export DEPLOY_STATE_DIR="$STATE_DIR"
 
+ai_env_file="$(sed -n 's/^AI_ENV_FILE=//p' "$RUNTIME_ENV" | tail -n1)"
+ai_env_version="$(sed -n 's/^AI_ENV_VERSION_ID=//p' "$RUNTIME_ENV" | tail -n1)"
+[[ "$ai_env_file" == /home/ubuntu/plannerus-deployment/backend/.env.production ]] \
+  || die 'runtime environment selected an unexpected AI environment path'
+bash "$SCRIPT_DIR/environment" pull-ai "$ai_env_file" "$ai_env_version"
+
 active=legacy
 [[ ! -s "$STATE_DIR/active-slot" ]] || active="$(<"$STATE_DIR/active-slot")"
 [[ "$active" == legacy || "$active" == blue || "$active" == green ]] || die 'invalid active-slot state'

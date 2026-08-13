@@ -27,6 +27,7 @@ jobs:
           sed -i 's#POSTGRES_PASSWORD=replace-me#POSTGRES_PASSWORD=offline-only#' "$test_root/runtime.env"
           sed -i 's#replace-me@db#offline-only@db#' "$test_root/runtime.env"
           sed -i 's#SECRET_KEY_BASE=replace-with-at-least-64-random-characters#SECRET_KEY_BASE=offline_only_0000000000000000000000000000000000000000000000000000#' "$test_root/runtime.env"
+          sed -i 's#AI_ENV_VERSION_ID=replace-with-secrets-manager-version-id#AI_ENV_VERSION_ID=offline-version-id#' "$test_root/runtime.env"
           sed -i "s#AI_ENV_FILE=.*#AI_ENV_FILE=$test_root/ai.env#" "$test_root/runtime.env"
           sed -i "s#AI_LOG_PATH=.*#AI_LOG_PATH=$test_root/ai-logs#" "$test_root/runtime.env"
           bash scripts/environment validate "$test_root/runtime.env"
@@ -37,7 +38,18 @@ jobs:
             exit 1
           fi
           sed -i "s#DEPLOY_STATE_DIR=.*#DEPLOY_STATE_DIR=$test_root#" "$test_root/runtime.env"
-          printf 'NODE_ENV=production\n' >"$test_root/ai.env"
+          printf '%s\n' \
+            'PORT=5000' \
+            'APPLICATION_NAME=Plannerus' \
+            'SECRET_SERVER_KEY=offline-only' \
+            'GOOGLE_API_KEY=offline-only' \
+            'GOOGLE_AI_MODEL=offline-only' \
+            'OPENAI_API_KEY=' \
+            'OPENAI_AI_MODEL=offline-only' \
+            'OPENROUTER_API_KEY=' \
+            'OPENROUTER_API_URL=https://example.invalid' \
+            'OPENROUTER_AI_MODEL=offline-only' >"$test_root/ai.env"
+          bash scripts/environment validate-ai "$test_root/ai.env"
           install -d "$test_root/ai-logs" "$test_root/proxy"
           printf 'PLANNERUS_BLUE_IMAGE=%s\nPLANNERUS_GREEN_IMAGE=%s\nCANDIDATE_IMAGE=%s\nPLANNERUS_BLUE_AI_IMAGE=%s\nPLANNERUS_GREEN_AI_IMAGE=%s\n' \
             '583909165557.dkr.ecr.eu-west-1.amazonaws.com/plannerus/blue-openproject@sha256:b2742542593566944bf77b5db8a7a4f45d4803738efc7984b282ee73a978990f' \

@@ -69,6 +69,19 @@ VersionId. This starts the same image in the inactive slot with the new
 environment, health-checks it, and switches traffic. To reverse a bad setting,
 select the previous Secrets Manager VersionId and repeat the same action.
 
+AI provider keys are versioned separately as `plannerus/production/ai-env`:
+
+```bash
+bash scripts/environment pull-ai ./ai.env
+$EDITOR ./ai.env
+bash scripts/environment validate-ai ./ai.env
+bash scripts/environment push-ai ./ai.env --confirm UPDATE-PRODUCTION-AI-ENV
+```
+
+Put the returned VersionId in the runtime dotenv as `AI_ENV_VERSION_ID`, push a
+new runtime version, and deploy with `release_image=current`. This keeps API
+keys off the VM as the source of truth while retaining one deployment button.
+
 Adding a new OpenProject environment key also requires mapping it under
 `x-app-environment` in `docker-compose.yml`; this prevents an unreviewed secret
 field from silently changing container behavior.
@@ -115,9 +128,9 @@ the old image against the migrated schema can corrupt data.
 
 ## One-time GitHub/AWS setup
 
-Create protected GitHub environments `plannerus-image-release`,
-`plannerus-upgrade`, and `plannerus-production`, each with required reviewers
-and `main` as the only allowed branch.
+Create GitHub environments `plannerus-image-release`, `plannerus-upgrade`, and
+`plannerus-production`, with `main` as the only allowed branch. The team is
+flat: there is no separate reviewer gate.
 
 The application build environment needs these variables:
 
@@ -132,6 +145,7 @@ The deployment environment needs:
 - `AWS_ACCOUNT_ID=583909165557`
 - `PLANNERUS_INSTANCE_ID=i-0379bc93c416f5324`
 - `PLANNERUS_RUNTIME_SECRET_ID=plannerus/production/runtime-env`
+- `PLANNERUS_AI_SECRET_ID=plannerus/production/ai-env`
 - `PLANNERUS_DEPLOY_ROLE_ARN` (OIDC role scoped to SSM commands on that instance)
 
 The EC2 role needs ECR pull, `secretsmanager:GetSecretValue` for the one runtime

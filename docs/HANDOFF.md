@@ -13,8 +13,8 @@ one-time platform bootstrap is not complete yet:
   `plannerus/production/runtime-env` secret have not been applied;
 - the protected GitHub environments and their variables have not been created;
 - AWS CLI is not installed on the current application VM;
-- AI-provider credentials still live only in
-  `/home/ubuntu/plannerus-deployment/backend/.env.production` on the VM.
+- AI-provider credentials still need to be seeded into
+  `plannerus/production/ai-env` from the current VM file.
 
 Do not describe the Deploy or Upgrade buttons as operational until these four
 items are completed and a no-change deployment has passed.
@@ -39,24 +39,23 @@ and approval for the protected environment, not an AWS user or local AWS keys.
 
 An AWS/GitHub administrator performs this once:
 
-1. Create protected GitHub environments before creating the AWS roles:
+1. Create GitHub environments before creating the AWS roles:
    - in `Alpha-Omega-Zed/plannerus`: `plannerus-image-release` and
      `plannerus-upgrade`;
    - in `Alpha-Omega-Zed/plannerus-deployment`: `plannerus-production`.
-   Require reviewers, prevent self-review where available, and allow only
-   `main`. This prevents a first workflow run from auto-creating an unprotected
-   environment.
+   Allow only `main`. The team is flat and no additional reviewer gate is used.
 2. In `aws-infrastructure/plannerus-deployment`, review and apply Terraform.
    Capture these outputs:
    - `github_image_publish_role_arn`;
    - `github_production_deploy_role_arn`;
-   - `runtime_env_secret_arn`;
+   - `runtime_env_secret_arn` and `ai_env_secret_arn`;
    - `instance_id` and `openproject_ecr_repository_url`.
 3. Configure the variables listed in the deployment README using the exact
    Terraform outputs. Do not create AWS access-key GitHub secrets.
-4. Populate `plannerus/production/runtime-env` with the validated dotenv
-   payload. Terraform creates only the empty secret container and never stores
-   secret values in Terraform state.
+4. Populate `plannerus/production/runtime-env` and
+   `plannerus/production/ai-env` with validated dotenv payloads. Terraform
+   creates only the empty secret containers and never stores secret values in
+   Terraform state.
 5. Install and verify AWS CLI v2 on the application VM. The VM uses its EC2
    instance role to fetch the selected secret version.
 6. Run repository validation, then a reviewed `release_image=current`
@@ -77,7 +76,8 @@ names are defined in `.env.example`. It contains:
 - the path to the separate AI environment file and log directory;
 - the Caddy ACME contact email.
 
-It does not currently contain the AI provider API keys.
+It contains `AI_ENV_VERSION_ID`, which binds a deployment to one exact version
+of the separate AI environment secret. It does not contain the provider keys.
 
 During a deployment, GitHub never reads this secret. The protected workflow
 sends an SSM command to the exact VM. On the VM, `scripts/environment pull`
@@ -92,31 +92,23 @@ that permission for ordinary code releases.
 
 ## AI service secret: current state and required migration
 
-The AI backend currently reads
+The AI backend reads
 `/home/ubuntu/plannerus-deployment/backend/.env.production`. This file includes
 database, mail, reCAPTCHA, OpenRouter, OpenAI, and Google provider settings. It
 is mode `0600` and is not committed to Git.
 
-A normal Deploy or Upgrade action reuses this path and does not overwrite the
-file, so an API-key edit made directly on the current VM survives container
-recreation and blue/green slot changes. It does not survive VM/root-volume
-replacement, loss, or accidental file deletion.
-
-Before declaring the platform fully handed off, create a separate
-`plannerus/production/ai-env` Secrets Manager secret, copy the existing file
-into it without printing values, grant the VM read-only access, and have the
-deployment materialize the selected version as mode `0600`. Keep it separate
-from the OpenProject runtime secret so access and rotation remain auditable.
+The source of truth is `plannerus/production/ai-env`. Each runtime secret version
+selects an exact AI secret VersionId. Before starting candidate containers, the
+VM fetches that version and materializes this file as mode `0600`. Direct VM
+edits are therefore temporary; use `scripts/environment push-ai`, update
+`AI_ENV_VERSION_ID`, version runtime, and deploy current.
 
 ## Operator roles
 
-- **Application developer:** changes `plannerus`, opens a PR, and observes CI.
-- **Release operator:** approves/runs Build, Deploy, or Upgrade through GitHub;
-  no local AWS credentials are required.
-- **Environment administrator:** versions runtime/AI secrets through restricted
-  company AWS access; cannot change application code by that permission alone.
-- **Infrastructure administrator:** reviews and applies Terraform; ordinary
-  releases never run Terraform.
+All team members can change the application and run Build, Deploy, or Upgrade
+through GitHub. No local AWS credentials are required for those actions. A team
+member needs company AWS access only when versioning runtime/AI configuration or
+changing Terraform; ordinary releases never run Terraform.
 
 ## Routine paths
 

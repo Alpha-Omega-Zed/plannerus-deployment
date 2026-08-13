@@ -2,25 +2,42 @@
 set -Eeuo pipefail
 
 usage() {
-  echo "usage: $0 validate FILE | pull FILE [VERSION_ID] | push FILE --confirm UPDATE-PRODUCTION-ENV" >&2
+  cat >&2 <<'USAGE'
+usage:
+  scripts/environment validate FILE
+  scripts/environment pull FILE [VERSION_ID]
+  scripts/environment push FILE --confirm UPDATE-PRODUCTION-ENV
+  scripts/environment validate-ai FILE
+  scripts/environment pull-ai FILE [VERSION_ID]
+  scripts/environment push-ai FILE --confirm UPDATE-PRODUCTION-AI-ENV
+USAGE
   exit 2
 }
 
-secret_id="${PLANNERUS_RUNTIME_SECRET_ID:-plannerus/production/runtime-env}"
+runtime_secret_id="${PLANNERUS_RUNTIME_SECRET_ID:-plannerus/production/runtime-env}"
+ai_secret_id="${PLANNERUS_AI_SECRET_ID:-plannerus/production/ai-env}"
 region="${AWS_REGION:-eu-west-1}"
 command_name="${1:-}"
 file="${2:-}"
 [[ -n "$command_name" && -n "$file" ]] || usage
 
-validate() {
-  local input="$1" key
+validate_dotenv() {
+  local input="$1" duplicates
   [[ -f "$input" && ! -L "$input" ]] || { echo "not a regular file: $input" >&2; exit 1; }
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" == \#* ]] && continue
     [[ "$line" =~ ^[A-Z][A-Z0-9_]*=.*$ ]] || { echo "invalid dotenv line" >&2; exit 1; }
     [[ "$line" != *'$('* && "$line" != *'`'* ]] || { echo "shell expansion is not allowed" >&2; exit 1; }
   done <"$input"
-  for key in POSTGRES_PASSWORD DATABASE_URL SECRET_KEY_BASE OPDATA OPENPROJECT_HOST__NAME PLANNERUS_AI_IMAGE DEPLOY_STATE_DIR; do
+  duplicates="$(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$input" | sort | uniq -d)"
+  [[ -z "$duplicates" ]] || { echo "duplicate dotenv keys: $duplicates" >&2; exit 1; }
+}
+
+validate_runtime() {
+  local input="$1" key secret_key ai_version
+  validate_dotenv "$input"
+  for key in POSTGRES_PASSWORD DATABASE_URL SECRET_KEY_BASE OPDATA OPENPROJECT_HOST__NAME \
+    PLANNERUS_AI_IMAGE AI_ENV_VERSION_ID AI_ENV_FILE DEPLOY_STATE_DIR; do
     grep -Eq "^${key}=.+" "$input" || { echo "missing key: $key" >&2; exit 1; }
   done
   grep -Eq '^OPENPROJECT_HOST__NAME=app\.plannerus\.com$' "$input" || { echo 'host must be app.plannerus.com' >&2; exit 1; }
@@ -28,6 +45,10 @@ validate() {
   secret_key="$(sed -n 's/^SECRET_KEY_BASE=//p' "$input" | tail -n1)"
   [[ ${#secret_key} -ge 64 ]] || { echo 'SECRET_KEY_BASE must contain at least 64 characters' >&2; exit 1; }
   grep -Eq '^OPDATA=/home/ubuntu/plannerus-deployment/opdata/files$' "$input" || { echo 'OPDATA must be the current persistent attachment path' >&2; exit 1; }
+  grep -Eq '^AI_ENV_FILE=/home/ubuntu/plannerus-deployment/backend/\.env\.production$' "$input" || { echo 'AI_ENV_FILE must be the protected production AI path' >&2; exit 1; }
+  ai_version="$(sed -n 's/^AI_ENV_VERSION_ID=//p' "$input")"
+  [[ ${#ai_version} -ge 1 && ${#ai_version} -le 1024 && "$ai_version" =~ ^[A-Za-z0-9._:+/=-]+$ ]] \
+    || { echo 'AI_ENV_VERSION_ID is invalid' >&2; exit 1; }
   grep -Eq '^DEPLOY_STATE_DIR=/var/lib/plannerus-deploy$' "$input" || { echo 'DEPLOY_STATE_DIR must be the protected deployment state path' >&2; exit 1; }
   grep -Eq '^PLANNERUS_AI_IMAGE=[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9/_-]+@sha256:[0-9a-f]{64}$' "$input" \
     || { echo 'PLANNERUS_AI_IMAGE must be an immutable ECR digest' >&2; exit 1; }
@@ -35,30 +56,66 @@ validate() {
   grep -Eq '^IMAP_ENABLED=false$' "$input" || { echo 'IMAP must remain disabled' >&2; exit 1; }
 }
 
+validate_ai() {
+  local input="$1" key
+  validate_dotenv "$input"
+  for key in PORT APPLICATION_NAME SECRET_SERVER_KEY GOOGLE_API_KEY GOOGLE_AI_MODEL \
+    OPENAI_API_KEY OPENAI_AI_MODEL OPENROUTER_API_KEY OPENROUTER_API_URL OPENROUTER_AI_MODEL; do
+    grep -Eq "^${key}=" "$input" || { echo "missing AI key: $key" >&2; exit 1; }
+  done
+  grep -Eq '^PORT=5000$' "$input" || { echo 'AI PORT must be 5000' >&2; exit 1; }
+  grep -Eq '^SECRET_SERVER_KEY=.+' "$input" || { echo 'AI SECRET_SERVER_KEY must not be empty' >&2; exit 1; }
+  grep -Eq '^(GOOGLE_API_KEY|OPENAI_API_KEY|OPENROUTER_API_KEY)=.+' "$input" \
+    || { echo 'at least one AI provider API key must not be empty' >&2; exit 1; }
+}
+
+pull_secret() {
+  local secret_id="$1" output="$2" version_id="$3" validator="$4" temporary
+  local args=(secretsmanager get-secret-value --region "$region" --secret-id "$secret_id" --query SecretString --output text)
+  [[ -z "$version_id" ]] || args+=(--version-id "$version_id")
+  temporary="$output.incomplete.$$"
+  umask 077
+  aws "${args[@]}" >"$temporary"
+  "$validator" "$temporary"
+  mv "$temporary" "$output"
+  chmod 600 "$output"
+  echo "environment written to $output without printing secret values"
+}
+
+push_secret() {
+  local secret_id="$1" input="$2" validator="$3" result
+  "$validator" "$input"
+  result="$(aws secretsmanager put-secret-value --region "$region" --secret-id "$secret_id" \
+    --secret-string "file://$input" --query VersionId --output text)"
+  [[ "$result" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$result" != null ]] \
+    || { echo 'AWS returned an invalid version ID' >&2; exit 1; }
+  echo "environment version created: $result"
+}
+
 case "$command_name" in
   validate)
-    validate "$file"
-    echo 'environment file is valid'
+    validate_runtime "$file"
+    echo 'runtime environment file is valid'
     ;;
   pull)
-    version_id="${3:-}"
-    args=(secretsmanager get-secret-value --region "$region" --secret-id "$secret_id" --query SecretString --output text)
-    [[ -z "$version_id" ]] || args+=(--version-id "$version_id")
-    temporary="$file.incomplete.$$"
-    umask 077
-    aws "${args[@]}" >"$temporary"
-    validate "$temporary"
-    mv "$temporary" "$file"
-    chmod 600 "$file"
-    echo "environment written to $file without printing secret values"
+    pull_secret "$runtime_secret_id" "$file" "${3:-}" validate_runtime
     ;;
   push)
     [[ "${3:-}" == --confirm && "${4:-}" == UPDATE-PRODUCTION-ENV ]] || usage
-    validate "$file"
-    result="$(aws secretsmanager put-secret-value --region "$region" --secret-id "$secret_id" --secret-string "file://$file" --query VersionId --output text)"
-    [[ "$result" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$result" != null ]] || { echo 'AWS returned an invalid version ID' >&2; exit 1; }
-    echo "environment version created: $result"
-    echo 'Run Deploy Plannerus with image=current and this environment version.'
+    push_secret "$runtime_secret_id" "$file" validate_runtime
+    echo 'Run Deploy Plannerus with image=current and this runtime environment version.'
+    ;;
+  validate-ai)
+    validate_ai "$file"
+    echo 'AI environment file is valid'
+    ;;
+  pull-ai)
+    pull_secret "$ai_secret_id" "$file" "${3:-}" validate_ai
+    ;;
+  push-ai)
+    [[ "${3:-}" == --confirm && "${4:-}" == UPDATE-PRODUCTION-AI-ENV ]] || usage
+    push_secret "$ai_secret_id" "$file" validate_ai
+    echo 'Put this AI VersionId in the runtime environment as AI_ENV_VERSION_ID, version runtime, then deploy current.'
     ;;
   *) usage ;;
 esac
