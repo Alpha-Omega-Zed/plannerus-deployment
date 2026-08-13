@@ -5,6 +5,18 @@ This repository is the runtime source of truth for
 builds live in `Alpha-Omega-Zed/plannerus`; Terraform, IAM, DNS and the EC2
 instance live in `aws-infrastructure`.
 
+## Repository map
+
+| Repository | What developers use it for |
+| --- | --- |
+| `Alpha-Omega-Zed/plannerus` | Change application code, update whitelabeling, prepare an OpenProject source upgrade, and build an immutable ECR image |
+| `Alpha-Omega-Zed/plannerus-deployment` (this repository) | Change runtime settings, deploy an image, run a schema upgrade, or roll back an application-only release |
+| `Alpha-Omega-Zed/aws-infrastructure` | Change AWS resources through Terraform; it contains no Compose runtime and performs no application release |
+
+This repository contains the only production `docker-compose.yml`. There is no
+control Compose or database-migration shortcut: all normal deployments and
+upgrades enter through the protected GitHub actions and `scripts/deploy`.
+
 The stale Plannerus 18/23 VMs are not deployment targets. The guarded scripts
 accept only AWS account `583909165557`, instance `i-0379bc93c416f5324`, and the
 tags `project_name=plannerus` and `Environment=blue`.
@@ -133,7 +145,3 @@ attachments, or applies Terraform. Before replacing/destroying the instance,
 take and verify an off-instance recovery point. The Terraform instance should
 also be protected from accidental destroy until dedicated data storage is
 introduced.
-
-The old `migrate_db.sh` and `docker-compose.control.yml` procedures are legacy
-artifacts and are not part of this workflow. They must not be run against
-`app.plannerus.com`.

@@ -1,3 +1,8 @@
+# CANONICAL PLANNERUS PRODUCTION RUNTIME.
+# Application source/images come from Alpha-Omega-Zed/plannerus.
+# AWS resources come from Alpha-Omega-Zed/aws-infrastructure.
+# Do not add a second production Compose model to either repository.
+
 name: plannerus-blue
 
 x-runtime-logging: &runtime_logging
