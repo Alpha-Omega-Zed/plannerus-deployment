@@ -114,9 +114,12 @@ maintenance=false
 recover_before_migration() {
   local exit_code=$?
   (( exit_code != 0 )) || return 0
-  if [[ "$schema_changed" == false && "$maintenance" == true ]]; then
+  if [[ "$schema_changed" == false ]]; then
     write_upstream "$active_web" || true
     reload_proxy || true
+    compose --profile "$inactive" stop "$inactive_ai" "$inactive_web" "$inactive_worker" >/dev/null 2>&1 || true
+  fi
+  if [[ "$schema_changed" == false && "$maintenance" == true ]]; then
     if [[ "$active" == legacy ]]; then
       docker start plannerus-blue-web-1 plannerus-blue-worker-1 >/dev/null 2>&1 || true
     else

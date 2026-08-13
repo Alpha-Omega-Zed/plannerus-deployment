@@ -97,7 +97,7 @@ validate_version_transition() {
 
 plannerus_smoke() {
   local body
-  body="$(curl -fsS --resolve app.plannerus.com:443:127.0.0.1 https://app.plannerus.com/)" \
+  body="$(curl -fsSL --resolve app.plannerus.com:443:127.0.0.1 https://app.plannerus.com/)" \
     || die 'Plannerus HTTPS smoke check failed'
   grep -Fq '<title>Sign in | Plannerus</title>' <<<"$body" \
     || die 'Plannerus login title/whitelabel smoke check failed'
