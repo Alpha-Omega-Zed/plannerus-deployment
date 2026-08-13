@@ -150,8 +150,8 @@ The deployment environment needs:
 - `PLANNERUS_AI_SECRET_ID=plannerus/production/ai-env`
 - `PLANNERUS_DEPLOY_ROLE_ARN` (OIDC role scoped to SSM commands on that instance)
 
-The EC2 role needs ECR pull, `secretsmanager:GetSecretValue` for the one runtime
-secret, and SSM core permissions. The VM needs Docker Compose, `aws`, `curl`,
+The EC2 role needs ECR pull, `secretsmanager:GetSecretValue` for the runtime and
+AI secrets, and SSM core permissions. The VM needs Docker Compose, `aws`, `curl`,
 `jq`, `tar`, `flock`, and `sha256sum`. No GitHub credential is installed on the
 VM: the protected workflow downloads the exact public repository commit archive
 identified by the workflow SHA.

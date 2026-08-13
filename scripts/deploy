@@ -161,12 +161,14 @@ plannerus_smoke
 compose --profile blue --profile green stop "$active_web" "$active_worker" >/dev/null 2>&1 || true
 docker stop plannerus-blue-web-1 plannerus-blue-worker-1 >/dev/null 2>&1 || true
 if [[ "$active" == legacy ]]; then
-  docker stop aitextfeature-backend >/dev/null 2>&1 || true
+  mapfile -t legacy_ai_ids < <(docker ps -q --filter label=com.docker.compose.project=plannerus-blue \
+    --filter label=com.docker.compose.service=aitextfeature-backend)
+  ((${#legacy_ai_ids[@]} == 0)) || docker stop "${legacy_ai_ids[@]}" >/dev/null
+  docker stop plannerus-blue-autoheal-1 >/dev/null 2>&1 || true
 else
   compose --profile "$active" stop "$active_ai" >/dev/null 2>&1 || true
 fi
 compose --profile "$inactive" up -d --no-deps "$inactive_worker"
-docker start plannerus-blue-autoheal-1 >/dev/null 2>&1 || true
 
 printf '%s\n' "$active" >"$STATE_DIR/previous-slot"
 printf '%s\n' "$inactive" >"$STATE_DIR/active-slot"

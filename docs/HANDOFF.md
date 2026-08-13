@@ -6,18 +6,14 @@ ordinary application releases.
 
 ## Current readiness
 
-The repository workflows and Terraform configuration are committed, but the
-one-time platform bootstrap is not complete yet:
+The one-time platform setup is complete. The Build and Deploy actions have been
+run successfully against production. `app.plannerus.com` is served by the
+single `plannerus-production` VM, using two application/AI container slots and
+one persistent PostgreSQL database and attachment directory.
 
-- the Terraform resources for the dedicated GitHub OIDC roles and
-  `plannerus/production/runtime-env` secret have not been applied;
-- the protected GitHub environments and their variables have not been created;
-- AWS CLI is not installed on the current application VM;
-- AI-provider credentials still need to be seeded into
-  `plannerus/production/ai-env` from the current VM file.
-
-Do not describe the Deploy or Upgrade buttons as operational until these four
-items are completed and a no-change deployment has passed.
+All six team members use the same actions. There is no reviewer gate and no
+developer needs a local AWS key for Build, Deploy, or Upgrade. Only `main` is
+accepted so an arbitrary feature branch cannot be deployed accidentally.
 
 ## How GitHub authenticates to AWS
 
@@ -32,8 +28,8 @@ GitHub Actions uses OpenID Connect (OIDC), not a stored AWS access key.
    repository. The deployment role can send an SSM command only to the approved
    Plannerus EC2 instance.
 
-The credentials expire automatically. A normal developer needs GitHub access
-and approval for the protected environment, not an AWS user or local AWS keys.
+The credentials expire automatically. A normal developer needs repository
+access, not an AWS user or local AWS keys.
 
 ## One-time platform-owner setup
 
@@ -57,8 +53,8 @@ An AWS/GitHub administrator performs this once:
    Terraform state.
 5. Install and verify AWS CLI v2 on the application VM. The VM uses its EC2
    instance role to fetch the selected secret version.
-6. Run repository validation, then a reviewed `release_image=current`
-   deployment before permitting normal releases.
+6. Run repository validation, then a `release_image=current` deployment before
+   permitting normal releases.
 
 ## Runtime secret: OpenProject and deployment configuration
 
@@ -89,7 +85,7 @@ that permits only reading/versioning this one secret, then follows the
 pull/validate/push commands in the README. Application developers do not need
 that permission for ordinary code releases.
 
-## AI service secret: current state and required migration
+## AI service secret
 
 The AI backend reads
 `/home/ubuntu/plannerus-deployment/backend/.env.production`. This file includes
