@@ -128,9 +128,11 @@ the old image against the migrated schema can corrupt data.
 
 ## One-time GitHub/AWS setup
 
-Create GitHub environments `plannerus-image-release`, `plannerus-upgrade`, and
-`plannerus-production`, with `main` as the only allowed branch. The team is
-flat: there is no separate reviewer gate.
+Create GitHub environments `plannerus-image-release` and
+`plannerus-production`, with `main` as the only allowed branch. These names
+bind the AWS OIDC roles to the two workflows that access AWS. The team is flat:
+there is no separate reviewer gate. The source-only Upgrade preparation action
+does not use an environment or AWS credentials.
 
 The application build environment needs these variables:
 

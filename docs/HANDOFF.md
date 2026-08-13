@@ -40,8 +40,7 @@ and approval for the protected environment, not an AWS user or local AWS keys.
 An AWS/GitHub administrator performs this once:
 
 1. Create GitHub environments before creating the AWS roles:
-   - in `Alpha-Omega-Zed/plannerus`: `plannerus-image-release` and
-     `plannerus-upgrade`;
+   - in `Alpha-Omega-Zed/plannerus`: `plannerus-image-release`;
    - in `Alpha-Omega-Zed/plannerus-deployment`: `plannerus-production`.
    Allow only `main`. The team is flat and no additional reviewer gate is used.
 2. In `aws-infrastructure/plannerus-deployment`, review and apply Terraform.
