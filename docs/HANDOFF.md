@@ -107,7 +107,8 @@ changing Terraform; ordinary releases never run Terraform.
 
 ## Routine paths
 
-- Code-only release: build an immutable digest in `plannerus`, then run Deploy.
+- Code-only release: build an immutable digest in `plannerus`, then run Deploy
+  with the environment input left as `current`.
 - Environment-only release: version the runtime secret, then run Deploy with
   `release_image=current`.
 - OpenProject upgrade: prepare/review the source-upgrade PR, build its digest,

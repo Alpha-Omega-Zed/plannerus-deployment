@@ -14,8 +14,9 @@ on:
         default: 17.0.1
         type: string
       environment_version_id:
-        description: Secrets Manager VersionId for plannerus/production/runtime-env
+        description: Use current for a code deploy, or paste the VersionId returned after an environment change
         required: true
+        default: current
         type: string
       confirmation:
         description: Type DEPLOY

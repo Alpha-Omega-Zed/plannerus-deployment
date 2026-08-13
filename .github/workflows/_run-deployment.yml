@@ -53,7 +53,7 @@ jobs:
           [[ "$MODE" == deploy || "$MODE" == upgrade ]]
           if [[ "$MODE" == deploy ]]; then [[ "$CONFIRMATION" == DEPLOY ]]; else [[ "$CONFIRMATION" == UPGRADE ]]; fi
           [[ "$OPENPROJECT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [[ "$ENVIRONMENT_VERSION_ID" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$ENVIRONMENT_VERSION_ID" != null ]]
+          [[ "$ENVIRONMENT_VERSION_ID" == current || ( "$ENVIRONMENT_VERSION_ID" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$ENVIRONMENT_VERSION_ID" != null ) ]]
           [[ "$RELEASE_IMAGE" == current || "$RELEASE_IMAGE" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9/_-]+@sha256:[0-9a-f]{64}$ ]]
           [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
           [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]{8,17}$ ]]

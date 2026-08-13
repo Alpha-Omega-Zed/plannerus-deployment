@@ -34,7 +34,7 @@ tags `project_name=plannerus` and `Environment=blue`.
 4. Run **Deploy Plannerus** here with:
    - `release_image`: the copied digest;
    - `openproject_version`: the version printed by the build;
-   - `environment_version_id`: the current Secrets Manager VersionId;
+   - `environment_version_id`: leave the default `current`;
    - confirmation `DEPLOY`.
 
 The script pulls the image without modifying the database, starts it in the
@@ -115,7 +115,9 @@ downtime for a local Compose database would be unsafe.
 
 ## Rollback
 
-For a deployment with no schema change:
+For a release with no schema change, run **Deploy Plannerus** with the previous
+image digest and previous environment VersionId. It uses the same inactive-slot
+health checks before switching traffic. The on-VM emergency equivalent is:
 
 ```bash
 sudo bash scripts/rollback

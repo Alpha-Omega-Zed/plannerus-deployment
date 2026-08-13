@@ -22,7 +22,7 @@ while (($#)); do
 done
 [[ "$mode" == deploy || "$mode" == upgrade ]] || usage
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
-[[ "$env_version" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$env_version" != null ]] || usage
+[[ "$env_version" == current || ( "$env_version" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$env_version" != null ) ]] || usage
 
 for tool in aws curl docker jq flock sha256sum tar; do require "$tool"; done
 [[ "$EUID" -eq 0 ]] || die 'deploy must run as root through SSM'
@@ -33,6 +33,12 @@ install -d -m 700 "$STATE_DIR" "$STATE_DIR/proxy" "$STATE_DIR/backups" "$STATE_D
 exec 9>"$STATE_DIR/deploy.lock"
 flock -n 9 || die 'another Plannerus deployment is running'
 
+if [[ "$env_version" == current ]]; then
+  env_version="$(aws secretsmanager get-secret-value --region "${AWS_REGION:-eu-west-1}" \
+    --secret-id "${PLANNERUS_RUNTIME_SECRET_ID:-plannerus/production/runtime-env}" --query VersionId --output text)"
+  [[ "$env_version" =~ ^[A-Za-z0-9._:+/=-]{1,1024}$ && "$env_version" != null ]] \
+    || die 'AWS returned an invalid current runtime environment VersionId'
+fi
 bash "$SCRIPT_DIR/environment" pull "$RUNTIME_ENV" "$env_version"
 export DEPLOY_STATE_DIR="$STATE_DIR"
 
