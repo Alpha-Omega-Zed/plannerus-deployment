@@ -26,6 +26,8 @@ done
 
 for tool in aws curl docker jq flock sha256sum tar; do require "$tool"; done
 [[ "$EUID" -eq 0 ]] || die 'deploy must run as root through SSM'
+export DOCKER_CONFIG=/home/ubuntu/.docker
+[[ -r "$DOCKER_CONFIG/config.json" ]] || die 'the VM ECR credential-helper configuration is missing'
 assert_target
 install -d -m 700 "$STATE_DIR" "$STATE_DIR/proxy" "$STATE_DIR/backups" "$STATE_DIR/history"
 exec 9>"$STATE_DIR/deploy.lock"
