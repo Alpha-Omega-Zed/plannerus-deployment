@@ -1,175 +1,118 @@
-# Plannerus deployment
+# Plannerus production operations
 
-This repository is the runtime source of truth for
-[app.plannerus.com](https://app.plannerus.com). Application source and image
-builds live in `Alpha-Omega-Zed/plannerus`; Terraform, IAM, DNS and the EC2
-instance live in `aws-infrastructure`.
+Use this repository to deploy [app.plannerus.com](https://app.plannerus.com),
+change its environment, or run an OpenProject database upgrade.
 
-## Repository map
+## Deploy code changes
 
-| Repository | What developers use it for |
-| --- | --- |
-| `Alpha-Omega-Zed/plannerus` | Change application code, update whitelabeling, prepare an OpenProject source upgrade, and build an immutable ECR image |
-| `Alpha-Omega-Zed/plannerus-deployment` (this repository) | Change runtime settings, deploy an image, run a schema upgrade, or roll back an application-only release |
-| `Alpha-Omega-Zed/aws-infrastructure` | Change AWS resources through Terraform; it contains no Compose runtime and performs no application release |
+First build the image in
+[Alpha-Omega-Zed/plannerus](https://github.com/Alpha-Omega-Zed/plannerus) as
+described in that repository's README. Copy the resulting ECR digest ending in
+`@sha256:...`.
 
-This repository contains the only production `docker-compose.yml`. There is no
-control Compose or database-migration shortcut: all normal deployments and
-upgrades enter through the protected GitHub actions and `scripts/deploy`.
+Then open
+[**Actions → Deploy Plannerus**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/deploy.yml),
+select `main`, choose **Run workflow**, and enter:
 
-For onboarding, AWS authentication, operator roles, and the exact runtime/AI
-secret split, read [docs/HANDOFF.md](docs/HANDOFF.md) before using an action.
+- `release_image`: the copied ECR digest;
+- `openproject_version`: the version shown by the Build action;
+- `environment_version_id`: leave `current`;
+- `confirmation`: `DEPLOY`.
 
-The stale Plannerus 18/23 VMs are not deployment targets. The guarded scripts
-accept only AWS account `583909165557`, instance `i-0379bc93c416f5324`, and the
-tags `project_name=plannerus` and `Environment=blue`.
+Wait for the action to finish successfully, then check
+[app.plannerus.com](https://app.plannerus.com). That is the complete code-release
+process.
 
-The EC2 console name is `plannerus-production` and the public hostname always
-remains `app.plannerus.com`. A few internal Docker/ECR identifiers still contain
-`blue` because the live PostgreSQL volume and existing image repository were
-created under that name. They are compatibility identifiers, not a second
-environment; renaming the Docker project or database volume would disconnect
-the application from its data.
+The action starts the new app and AI containers in the inactive slot, checks
+them, switches traffic, and then stops the old slot. It does not recreate the
+database or attachment storage. If the image needs a database migration, Deploy
+stops and tells you to use Upgrade instead.
 
-## What developers do
+## Change the environment
 
-### Redeploy a code change
+Environment values are in AWS Secrets Manager, not Git and not the VM.
 
-1. Merge the code pull request into `plannerus/main` after **Plannerus CI**.
-2. Run **Build immutable Plannerus image** in the `plannerus` repository.
-3. Copy the ECR digest from the workflow summary.
-4. Run **Deploy Plannerus** here with:
-   - `release_image`: the copied digest;
-   - `openproject_version`: the version printed by the build;
-   - `environment_version_id`: leave the default `current`;
-   - confirmation `DEPLOY`.
+For environment editing only, you need the company AWS CLI profile. Build,
+Deploy, and Upgrade actions do not require local AWS credentials. Verify your
+AWS login before editing:
 
-The script pulls the image without modifying the database, starts it in the
-inactive blue/green web and AI slot, waits for both health checks, verifies the
-Plannerus login branding, switches Caddy, and only then stops the former web,
-worker, and AI slot. The database volume and attachment directory are never
-recreated.
+```bash
+aws sts get-caller-identity
+# Account must be 583909165557.
+```
 
-If the candidate contains Rails migrations, **Deploy Plannerus** stops before
-changing anything and tells the developer to use **Upgrade Plannerus**.
-
-### Change `.env` and redeploy
-
-Runtime configuration is a versioned raw dotenv secret named
-`plannerus/production/runtime-env`. GitHub, Terraform and the repository never
-contain its values.
+From this repository:
 
 ```bash
 export AWS_REGION=eu-west-1
 export PLANNERUS_RUNTIME_SECRET_ID=plannerus/production/runtime-env
 
-# Fetch without printing values, edit locally, validate, then create a version.
 bash scripts/environment pull ./runtime.env
 $EDITOR ./runtime.env
 bash scripts/environment validate ./runtime.env
 bash scripts/environment push ./runtime.env --confirm UPDATE-PRODUCTION-ENV
 ```
 
-The last command prints only the new VersionId. Run **Deploy Plannerus** with
-`release_image=current`, the currently deployed OpenProject version, and that
-VersionId. This starts the same image in the inactive slot with the new
-environment, health-checks it, and switches traffic. To reverse a bad setting,
-select the previous Secrets Manager VersionId and repeat the same action.
+The last command prints a new VersionId. Open
+[**Actions → Deploy Plannerus**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/deploy.yml)
+and enter:
 
-AI provider keys are versioned separately as `plannerus/production/ai-env`:
+- `release_image`: `current`;
+- `openproject_version`: the currently deployed version;
+- `environment_version_id`: the new VersionId;
+- `confirmation`: `DEPLOY`.
 
-```bash
-bash scripts/environment pull-ai ./ai.env
-$EDITOR ./ai.env
-bash scripts/environment validate-ai ./ai.env
-bash scripts/environment push-ai ./ai.env --confirm UPDATE-PRODUCTION-AI-ENV
-```
+Delete the local `runtime.env` after the deployment. Never commit it.
 
-Put the returned VersionId in the runtime dotenv as `AI_ENV_VERSION_ID`, push a
-new runtime version, and deploy with `release_image=current`. This keeps API
-keys off the VM as the source of truth while retaining one deployment button.
+### Change an AI key
 
-Adding a new OpenProject environment key also requires mapping it under
-`x-app-environment` in `docker-compose.yml`; this prevents an unreviewed secret
-field from silently changing container behavior.
-
-### Upgrade OpenProject
-
-1. In `plannerus`, run **Prepare OpenProject upgrade** with an exact official
-   tag. The action resolves and records its full SHA from the official repo.
-2. Review and merge the generated PR. Plannerus-owned logo, CSS and AI files
-   are restored verbatim; other conflicts stop for review.
-3. Run **Build immutable Plannerus image** and copy its digest.
-4. Run **Upgrade Plannerus** here with the digest, target version, current
-   environment VersionId, and confirmation `UPGRADE`.
-
-The upgrade action:
-
-1. proves it is on the one approved EC2 instance;
-2. determines whether the image has pending Rails migrations;
-3. sends Caddy to maintenance and stops all OpenProject web/worker writers;
-4. creates a PostgreSQL custom-format dump and attachment archive with SHA-256
-   checksums under `/var/lib/plannerus-deploy/backups`;
-5. runs the new image's seeder exactly once;
-6. verifies no migrations remain and that core record counts are unchanged;
-7. starts and health-checks the inactive app/AI slot, verifies the Plannerus
-   login branding, switches Caddy, then starts its worker.
-
-OpenProject major upgrades must be sequential. On this single VM with a local
-PostgreSQL database, application-only releases have a live blue/green cutover,
-but schema-changing upgrades require a short write outage. Claiming zero-write
-downtime for a local Compose database would be unsafe.
-
-## Rollback
-
-For a release with no schema change, run **Deploy Plannerus** with the previous
-image digest and previous environment VersionId. It uses the same inactive-slot
-health checks before switching traffic. The on-VM emergency equivalent is:
+Google, OpenAI, OpenRouter, AI database, mail, and reCAPTCHA values are stored
+separately in `plannerus/production/ai-env`.
 
 ```bash
-sudo bash scripts/rollback
+bash scripts/environment pull-ai /tmp/plannerus-ai.env
+$EDITOR /tmp/plannerus-ai.env
+bash scripts/environment validate-ai /tmp/plannerus-ai.env
+bash scripts/environment push-ai /tmp/plannerus-ai.env --confirm UPDATE-PRODUCTION-AI-ENV
 ```
 
-This health-checks the prior slot and switches Caddy back. After a schema
-migration, automatic rollback is deliberately refused. Restore the matched
-database dump and attachment archive together, or apply a forward fix. Starting
-the old image against the migrated schema can corrupt data.
+Copy the returned AI VersionId. Pull `runtime.env`, replace only
+`AI_ENV_VERSION_ID`, validate and push `runtime.env`, then run Deploy with
+`release_image=current` and the new runtime VersionId.
 
-## One-time GitHub/AWS setup
+Delete `runtime.env` and `/tmp/plannerus-ai.env` afterward. A direct edit on the
+VM is temporary and is overwritten by the next deployment.
 
-Create GitHub environments `plannerus-image-release` and
-`plannerus-production`, with `main` as the only allowed branch. These names
-bind the AWS OIDC roles to the two workflows that access AWS. The team is flat:
-there is no separate reviewer gate. The source-only Upgrade preparation action
-does not use an environment or AWS credentials.
+## Upgrade OpenProject
 
-The application build environment needs these variables:
+Do not use this for an ordinary code change.
 
-- `AWS_REGION=eu-west-1`
-- `PLANNERUS_ECR_REGISTRY=583909165557.dkr.ecr.eu-west-1.amazonaws.com`
-- `PLANNERUS_APP_ECR_REPOSITORY=plannerus/blue-openproject`
-- `PLANNERUS_IMAGE_PUBLISH_ROLE_ARN` (OIDC role scoped to that ECR repository)
+1. In [Alpha-Omega-Zed/plannerus](https://github.com/Alpha-Omega-Zed/plannerus),
+   run **Prepare OpenProject upgrade** with the exact official tag.
+2. Review the generated PR, wait for **Plannerus CI**, and merge it.
+3. Run **Build immutable Plannerus image** and copy its digest and version.
+4. Here, run
+   [**Upgrade Plannerus**](https://github.com/Alpha-Omega-Zed/plannerus-deployment/actions/workflows/upgrade.yml)
+   with that digest, version, `environment_version_id=current`, and confirmation
+   `UPGRADE`.
+5. Wait for success and test [app.plannerus.com](https://app.plannerus.com).
 
-The deployment environment needs:
+Upgrade creates a matched PostgreSQL and attachment backup before migrations.
+Schema changes require a short maintenance window; normal Deploy releases do
+not.
 
-- `AWS_REGION=eu-west-1`
-- `AWS_ACCOUNT_ID=583909165557`
-- `PLANNERUS_INSTANCE_ID=i-0379bc93c416f5324`
-- `PLANNERUS_RUNTIME_SECRET_ID=plannerus/production/runtime-env`
-- `PLANNERUS_AI_SECRET_ID=plannerus/production/ai-env`
-- `PLANNERUS_DEPLOY_ROLE_ARN` (OIDC role scoped to SSM commands on that instance)
+## Roll back a normal release
 
-The EC2 role needs ECR pull, `secretsmanager:GetSecretValue` for the runtime and
-AI secrets, and SSM core permissions. The VM needs Docker Compose, `aws`, `curl`,
-`jq`, `tar`, `flock`, and `sha256sum`. No GitHub credential is installed on the
-VM: the protected workflow downloads the exact public repository commit archive
-identified by the workflow SHA.
+Run **Deploy Plannerus** again with the previous image digest and previous
+environment VersionId. Do not run an older app image after a schema upgrade;
+use the recovery procedure in the technical reference.
 
-## Current data ownership warning
+## Where things live
 
-PostgreSQL, attachments and local backups are all on the EC2 root volume. The
-automation never runs `down -v`, deletes the database volume, deletes
-attachments, or applies Terraform. Before replacing/destroying the instance,
-take and verify an off-instance recovery point. The Terraform instance should
-also be protected from accidental destroy until dedicated data storage is
-introduced.
+- `plannerus`: application code, Build, and source-upgrade action.
+- `plannerus-deployment`: this guide, production Compose, environment tools,
+  Deploy, and database Upgrade action.
+- `aws-infrastructure/plannerus-deployment`: Terraform only.
+
+For architecture, authentication, secret contents, failure behavior, and
+recovery details, read [docs/HANDOFF.md](docs/HANDOFF.md).

@@ -1,116 +1,126 @@
-# Plannerus operations handoff
+# Plannerus technical operations reference
 
-This document separates one-time platform setup from normal developer work.
-Developers do not put AWS access keys in GitHub and do not log in to the VM for
-ordinary application releases.
+The repository README is the day-to-day runbook. This file explains the system
+behind it and is intended for troubleshooting and ownership handoff.
 
-## Current readiness
+## Production layout
 
-The one-time platform setup is complete. The Build and Deploy actions have been
-run successfully against production. `app.plannerus.com` is served by the
-single `plannerus-production` VM, using two application/AI container slots and
-one persistent PostgreSQL database and attachment directory.
+- Public host: `app.plannerus.com`.
+- EC2 display name: `plannerus-production`.
+- Instance: `i-0379bc93c416f5324`, account `583909165557`, region `eu-west-1`.
+- Runtime: one VM, two app/AI slots, one Caddy proxy, one PostgreSQL database,
+  one attachment directory, and one cache.
+- Persistent database volume: `plannerus-blue_pgdata-new`.
+- Persistent attachments:
+  `/home/ubuntu/plannerus-deployment/opdata/files`.
 
-All six team members use the same actions. There is no reviewer gate and no
-developer needs a local AWS key for Build, Deploy, or Upgrade. Only `main` is
-accepted so an arbitrary feature branch cannot be deployed accidentally.
+Some Docker, ECR, Terraform, and tag names retain `blue` for compatibility with
+the original deployment. They do not indicate another live environment. Do not
+rename the Compose project or database volume: their names connect the app to
+the existing data.
 
-## How GitHub authenticates to AWS
+The old Plannerus 18 and 23 VMs are not deployment targets.
 
-GitHub Actions uses OpenID Connect (OIDC), not a stored AWS access key.
+## AWS authentication
 
-1. A protected workflow job requests a short-lived GitHub OIDC token.
-2. AWS STS verifies the token against the account's GitHub OIDC provider.
-3. The IAM role trust policy accepts only the exact repository and GitHub
-   environment named in Terraform.
-4. STS returns temporary credentials for that single job.
-5. The image-build role can publish only to the Plannerus application ECR
-   repository. The deployment role can send an SSM command only to the approved
-   Plannerus EC2 instance.
+Build, Deploy, and Upgrade use GitHub OIDC. GitHub requests a short-lived token,
+AWS validates the repository and environment identity, and STS returns temporary
+credentials for that workflow run. No long-lived AWS access key is stored in
+GitHub or on a developer laptop.
 
-The credentials expire automatically. A normal developer needs repository
-access, not an AWS user or local AWS keys.
+- `plannerus-github-image-publisher` publishes only the Plannerus app image.
+- `plannerus-github-production-deploy` can inspect and send SSM commands only
+  to the production Plannerus instance.
+- The EC2 instance role pulls the two ECR images and reads the two production
+  secrets.
 
-## One-time platform-owner setup
+All team members with repository access can run the actions. There is no
+reviewer gate. Only `main` is accepted, and deployments are serialized so two
+team members cannot deploy simultaneously.
 
-An AWS/GitHub administrator performs this once:
+Local company AWS credentials are needed only to change Secrets Manager values
+or Terraform. Confirm account `583909165557` before either operation.
 
-1. Create GitHub environments before creating the AWS roles:
-   - in `Alpha-Omega-Zed/plannerus`: `plannerus-image-release`;
-   - in `Alpha-Omega-Zed/plannerus-deployment`: `plannerus-production`.
-   Allow only `main`. The team is flat and no additional reviewer gate is used.
-2. In `aws-infrastructure/plannerus-deployment`, review and apply Terraform.
-   Capture these outputs:
-   - `github_image_publish_role_arn`;
-   - `github_production_deploy_role_arn`;
-   - `runtime_env_secret_arn` and `ai_env_secret_arn`;
-   - `instance_id` and `openproject_ecr_repository_url`.
-3. Configure the variables listed in the deployment README using the exact
-   Terraform outputs. Do not create AWS access-key GitHub secrets.
-4. Populate `plannerus/production/runtime-env` and
-   `plannerus/production/ai-env` with validated dotenv payloads. Terraform
-   creates only the empty secret containers and never stores secret values in
-   Terraform state.
-5. Install and verify AWS CLI v2 on the application VM. The VM uses its EC2
-   instance role to fetch the selected secret version.
-6. Run repository validation, then a `release_image=current` deployment before
-   permitting normal releases.
+## Secrets Manager
 
-## Runtime secret: OpenProject and deployment configuration
+Terraform creates the secret containers but never stores their values in state.
 
-`plannerus/production/runtime-env` is a raw dotenv document. The expected key
-names are defined in `.env.example`. It contains:
+### `plannerus/production/runtime-env`
+
+This raw dotenv document includes:
 
 - PostgreSQL password and `DATABASE_URL`;
 - Rails `SECRET_KEY_BASE`;
-- attachment and deployment-state paths;
-- hostname, HTTPS, worker and thread settings;
-- SMTP credentials and delivery settings;
-- flags that keep cron and IMAP disabled;
+- hostname, HTTPS, SMTP, worker, and thread settings;
+- persistent attachment and deployment-state paths;
 - the immutable AI image digest;
-- the path to the separate AI environment file and log directory;
-- the Caddy ACME contact email.
+- `AI_ENV_VERSION_ID`, which selects one exact AI secret version; and
+- the Caddy ACME contact.
 
-It contains `AI_ENV_VERSION_ID`, which binds a deployment to one exact version
-of the separate AI environment secret. It does not contain the provider keys.
+The VM fetches the selected version, validates it, and writes
+`/var/lib/plannerus-deploy/runtime.env` with mode `0600`.
 
-During a deployment, GitHub never reads this secret. The protected workflow
-sends an SSM command to the exact VM. On the VM, `scripts/environment pull`
-uses the EC2 instance role to call `secretsmanager:GetSecretValue` for the exact
-VersionId supplied to the workflow, validates the dotenv structure, and writes
-it mode `0600` under `/var/lib/plannerus-deploy/runtime.env`.
+The existing short `SECRET_KEY_BASE` is intentionally preserved because an
+unplanned rotation can invalidate sessions or encrypted credentials. Rotate it
+only as a separate maintenance task.
 
-Changing this secret is an operator task. The operator needs company AWS access
-that permits only reading/versioning this one secret, then follows the
-pull/validate/push commands in the README. Application developers do not need
-that permission for ordinary code releases.
+### `plannerus/production/ai-env`
 
-## AI service secret
+This raw dotenv document includes the AI database, mail, reCAPTCHA, Google,
+OpenAI, and OpenRouter settings. The VM writes the selected version to
+`/home/ubuntu/plannerus-deployment/backend/.env.production` with mode `0600`.
 
-The AI backend reads
-`/home/ubuntu/plannerus-deployment/backend/.env.production`. This file includes
-database, mail, reCAPTCHA, OpenRouter, OpenAI, and Google provider settings. It
-is mode `0600` and is not committed to Git.
+The Google API key originally edited on the VM is already stored here. Future
+VM edits are overwritten; version the secret instead.
 
-The source of truth is `plannerus/production/ai-env`. Each runtime secret version
-selects an exact AI secret VersionId. Before starting candidate containers, the
-VM fetches that version and materializes this file as mode `0600`. Direct VM
-edits are therefore temporary; use `scripts/environment push-ai`, update
-`AI_ENV_VERSION_ID`, version runtime, and deploy current.
+## Deployment behavior
 
-## Operator roles
+For a normal Deploy:
 
-All team members can change the application and run Build, Deploy, or Upgrade
-through GitHub. No local AWS credentials are required for those actions. A team
-member needs company AWS access only when versioning runtime/AI configuration or
-changing Terraform; ordinary releases never run Terraform.
+1. resolve exact app, AI, and environment versions;
+2. reject an image with pending database migrations;
+3. start and health-check the inactive app and AI slot;
+4. validate Caddy and Plannerus login branding;
+5. switch local Caddy to the healthy slot; and
+6. drain and stop the former slot, then start the new worker.
 
-## Routine paths
+The hostname never changes. PostgreSQL, cache, attachments, and Caddy state are
+shared rather than duplicated. A pre-cutover failure keeps or restores the old
+slot.
 
-- Code-only release: build an immutable digest in `plannerus`, then run Deploy
-  with the environment input left as `current`.
-- Environment-only release: version the runtime secret, then run Deploy with
-  `release_image=current`.
-- OpenProject upgrade: prepare/review the source-upgrade PR, build its digest,
-  then run Upgrade. Schema migrations require the documented short write
-  outage; they are not zero-downtime database changes.
+For Upgrade, the action first enters maintenance, stops writers, creates a
+custom-format PostgreSQL dump and attachment archive with checksums under
+`/var/lib/plannerus-deploy/backups`, runs the candidate seeder once, confirms no
+migrations remain, compares core record counts, and then performs the same
+health-gated slot switch.
+
+OpenProject major upgrades must be sequential. A schema-changing upgrade has a
+short write outage because both slots use one local database.
+
+## Recovery
+
+An application-only release can be reversed by running Deploy with the previous
+image digest and environment VersionId. The emergency on-VM helper is
+`sudo bash scripts/rollback`.
+
+After a schema migration, never start the old image against the migrated
+database. Either apply a forward fix or restore the matching pre-upgrade
+database dump and attachment archive together. Restoring loses writes made
+after that recovery point.
+
+PostgreSQL, attachments, and local migration backups currently live on the
+encrypted EC2 root volume. Terraform protects the instance with
+`prevent_destroy`, and AWS Backup covers it, but an off-instance verified
+database/attachment recovery point is still required before replacing the VM.
+
+## Ownership boundary
+
+- `Alpha-Omega-Zed/plannerus`: application source, CI, whitelabeling, Build, and
+  OpenProject source-upgrade preparation.
+- `Alpha-Omega-Zed/plannerus-deployment`: the only production Compose model,
+  environment validation, Deploy, Upgrade, and rollback logic.
+- `Alpha-Omega-Zed/aws-infrastructure/plannerus-deployment`: EC2, security
+  group, Route53, ECR, IAM/OIDC, and empty Secrets Manager containers.
+
+Terraform never deploys application containers. The app repository's root
+Compose file is never used in production.
