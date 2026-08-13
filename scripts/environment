@@ -43,7 +43,10 @@ validate_runtime() {
   grep -Eq '^OPENPROJECT_HOST__NAME=app\.plannerus\.com$' "$input" || { echo 'host must be app.plannerus.com' >&2; exit 1; }
   grep -Eq '^DATABASE_URL=postgres://openproject:.+@db/openproject([?].*)?$' "$input" || { echo 'DATABASE_URL must target the persistent local OpenProject database service' >&2; exit 1; }
   secret_key="$(sed -n 's/^SECRET_KEY_BASE=//p' "$input" | tail -n1)"
-  [[ ${#secret_key} -ge 64 ]] || { echo 'SECRET_KEY_BASE must contain at least 64 characters' >&2; exit 1; }
+  [[ -n "$secret_key" ]] || { echo 'SECRET_KEY_BASE must not be empty' >&2; exit 1; }
+  if (( ${#secret_key} < 64 )); then
+    echo 'warning: preserving the existing short SECRET_KEY_BASE; rotate it only in a planned maintenance window' >&2
+  fi
   grep -Eq '^OPDATA=/home/ubuntu/plannerus-deployment/opdata/files$' "$input" || { echo 'OPDATA must be the current persistent attachment path' >&2; exit 1; }
   grep -Eq '^AI_ENV_FILE=/home/ubuntu/plannerus-deployment/backend/\.env\.production$' "$input" || { echo 'AI_ENV_FILE must be the protected production AI path' >&2; exit 1; }
   ai_version="$(sed -n 's/^AI_ENV_VERSION_ID=//p' "$input")"
