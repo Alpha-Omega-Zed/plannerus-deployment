@@ -21,6 +21,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: plannerus-production-deployment
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-24.04
