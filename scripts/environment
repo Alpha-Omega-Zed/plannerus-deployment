@@ -74,11 +74,13 @@ validate_ai() {
 
 pull_secret() {
   local secret_id="$1" output="$2" version_id="$3" validator="$4" temporary
-  local args=(secretsmanager get-secret-value --region "$region" --secret-id "$secret_id" --query SecretString --output text)
+  local args=(secretsmanager get-secret-value --region "$region" --secret-id "$secret_id" --output json)
+  command -v aws >/dev/null || { echo 'aws CLI is required' >&2; exit 1; }
+  command -v jq >/dev/null || { echo 'jq is required' >&2; exit 1; }
   [[ -z "$version_id" ]] || args+=(--version-id "$version_id")
   temporary="$output.incomplete.$$"
   umask 077
-  aws "${args[@]}" >"$temporary"
+  aws "${args[@]}" | jq -er '.SecretString' >"$temporary"
   "$validator" "$temporary"
   mv "$temporary" "$output"
   chmod 600 "$output"
@@ -87,6 +89,7 @@ pull_secret() {
 
 push_secret() {
   local secret_id="$1" input="$2" validator="$3" result
+  command -v aws >/dev/null || { echo 'aws CLI is required' >&2; exit 1; }
   "$validator" "$input"
   result="$(aws secretsmanager put-secret-value --region "$region" --secret-id "$secret_id" \
     --secret-string "file://$input" --query VersionId --output text)"
