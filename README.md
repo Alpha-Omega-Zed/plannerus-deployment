@@ -137,4 +137,8 @@ reference.
 - `aws-infrastructure/plannerus-deployment`: Terraform only.
 
 For architecture, authentication, secret contents, failure behavior, and
-recovery details, read [docs/HANDOFF.md](docs/HANDOFF.md).
+recovery details, read:
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete solution
+  diagrams; and
+- [docs/HANDOFF.md](docs/HANDOFF.md) for the technical operations reference.
